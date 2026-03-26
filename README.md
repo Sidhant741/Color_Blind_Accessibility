@@ -31,6 +31,38 @@ Grader : It is a function that evaluates how well the agent solved the task. It 
 
 ## Detailed Task Design
 
+Each task is fully specified below - including scenario, what is broken, what the agent must do, how the grader scores it, and what a typical agent score looks like
+
+### Easy Task
+* Scenario : The agent receives a simple scatter plot with 2 similar CB colors, and one CB type
+* What's wrong : A CB user might not able completely distinguishable points
+* What the Agent must do 
+    * Detect the color pair
+    * Recolor to the safe palette
+    * Changing pattern has no value here 
+* Grader Check : Are the colors now distinguishable for the CB (through delta_E)
+* Expected Baseline agent score : 0.85 - 0.95
+
+### Medium Task
+* Scenario : The agent receives a scatter plot with 5-7 similar CB colors, and two CB types
+* What's wrong : A CB users might not able completely distinguishable points
+* What the Agent must do 
+    * Detect the color pair which creating issue for both CB
+    * Recolor to the safe palette
+    * Changing pattern has little value, but more value still remains to the color  
+* Grader Check : Are the colors now distinguishable for the CBs (through delta_E). Also if it exceeds max_no_of_steps , dont stop, rather start giving penalities. And at the end dont give efficiency bonus.
+* Expected Baseline agent score : 0.60 - 0.80
+
+### Hard Task
+* Scenario : The agent receives a scatter plot with 10-15 similar CB colors, and three CB types
+* What's wrong : A CB users might not able completely distinguishable points
+* What the Agent must do 
+    * Detect the color pair which creating issue for both CB
+    * Recolor to the safe palette
+    * Changing pattern has value, but higher value still remains to the color  
+* Grader Check : Are the colors now distinguishable for the CBs (through delta_E). Also it has to stay within the strict action budget. And at the end give efficieny bonus.
+* Expected Baseline agent score : 0.30 - 0.50
+
 ## Environment Details
 
 ### State vs Observation
@@ -139,15 +171,183 @@ def reset(self, task=None):
 
 ### Action
 
+Agent decides an action() -> Environment validates the action -> Environment applies the action (updates legend_info + redraws image) 
+-> Grader runs and scores the new state -> Environment checks if episode is done -> Returns (observation, reward, done, info)
+
+```
+# Option 1 — just recolor
+action = {
+    "target":   "Class A",
+    "fix_type": "recolor",
+    "new_hex":  "#0077BB",
+    "new_shape": None
+}
+
+# Option 2 — just add shape
+action = {
+    "target":    "Class A",
+    "fix_type":  "change_shape",
+    "new_hex":   None,
+    "new_shape": "triangle"
+}
+```
+
 ### Step
+Journey of One Action
+
+```
+Agent looks at observation decides 
+Class A needs fixing calls step()
+            ↓
+Environement receives the action
+            ↓
+        Validates it
+            ↓
+Applies it to internal state
+            ↓
+Rerenders the scatter plot image
+            ↓
+Grader runs delta_E simulation
+            ↓
+    Reward computated
+            ↓
+        Done check
+            ↓
+    New observation built
+            ↓
+Return (obs, reward, done, info)
+        back to agent
+```
+
+### Reward
+1. Give HIGH reward when CB user can distinguish categories
+2. Give LOW reward when categories still look identical
+3. Give PARTIAL reward for partial progress
+4. Not leak the answer to the agent
+5. Work consistently across easy/medium/hard
+
+Therefore the Core Signal - delta_E i.e. perceptual color difference between two colors AS SEEN by a CB user
+
+* delta_E = 0.0   → colors look completely identical
+* delta_E = 10.0  → barely distinguishable
+* delta_E = 20.0  → clearly different
+* delta_E = 40.0  → very different
+* delta_E = 50+   → maximum difference
+
+| Task   | Color Weight | Shape Weight | Allowed Actions         | Meaning                                                              |
+|--------|--------------|--------------|-------------------------|----------------------------------------------------------------------|
+| Easy   | 1.0          | 0.0          | recolor only            | Only color matters; shapes are fixed                                 |
+| Medium | 0.8          | 0.2          | recolor or change shape | Color is primary; shapes give a small bonus                          |
+| Hard   | 0.6          | 0.4          | recolor or change shape | Both color and shape are required; high reward only if both are good |
+
+Other Bonus
+* Efficiency Bonus : If hard task is solved well (base reward >= Threshold), the agent gets an extra bonus for finishing quickly
+    i.e. bonus = (1 - steps_taken / max_steps ) * 0.1
+* Redundant Action Penalty : If the categories are already well-distinguishable for every other category, and agent do the action step,
+    then we have to add -ve penalty reward, which tells the agent to not touch categories that are already solved
+
+
+```
+FUNCTION compute_reward(state, previous_state, task, steps_taken, max_steps):
+    # ------------------------------------------------------------
+    # 1. Set task weights
+    # ------------------------------------------------------------
+    IF task == "easy":
+        color_weight = 1.0, shape_weight = 0.0
+    ELSE IF task == "medium":
+        color_weight = 0.8, shape_weight = 0.2
+    ELSE IF task == "hard":
+        color_weight = 0.6, shape_weight = 0.4
+
+    # ------------------------------------------------------------
+    # 2. Core reward: average over all category pairs
+    # ------------------------------------------------------------
+    total_pair_reward = 0
+    FOR each pair of categories (i, j):
+        # Color score: average over all CB types
+        color_score = 0
+        FOR each cb_type in state.colorblind_types:
+            sim_i = simulate_cb(state.categories[i].hex, cb_type)
+            sim_j = simulate_cb(state.categories[j].hex, cb_type)
+            delta = CIEDE2000(sim_i, sim_j)
+            color_score += min(delta / 40.0, 1.0)
+        color_score = color_score / len(state.colorblind_types)
+
+        # Shape score: 1 if shapes differ, else 0
+        shape_score = 1 if state.categories[i].shape != state.categories[j].shape else 0
+
+        # Pair reward
+        pair_reward = color_weight * color_score + shape_weight * shape_score
+        total_pair_reward += min(pair_reward, 1.0)
+
+    core_reward = total_pair_reward / number_of_pairs
+
+    # ------------------------------------------------------------
+    # 3. Efficiency bonus (only for hard task)
+    # ------------------------------------------------------------
+    bonus = 0
+    IF task == "hard" AND core_reward >= 0.8:
+        bonus = (1.0 - steps_taken / max_steps) * 0.1
+
+    # ------------------------------------------------------------
+    # 4. Redundant action penalty (if action was unnecessary)
+    # ------------------------------------------------------------
+    penalty = 0
+    IF action.target_category was already well_distinguished:
+        penalty += -0.05
+
+    # ------------------------------------------------------------
+    # 5. Regression penalty (if overall reward dropped)
+    # ------------------------------------------------------------
+    IF previous_state IS NOT None:
+        previous_core = compute_core_reward(previous_state)   # call recursively
+        IF core_reward < previous_core:
+            penalty += -0.1 * (previous_core - core_reward)
+
+    # ------------------------------------------------------------
+    # 6. Final reward (capped)
+    # ------------------------------------------------------------
+    total_reward = core_reward + bonus + penalty
+    RETURN clamp(total_reward, 0.0, 1.0)
+```
 
 ## How the RL loop works
 
-## What the Agent Learns over time
+```
+Real Webpage / Image
+    |
+Agent 'sees' it  (reset / state)
+    |
+Agent takes actions  (recolor, relabel, repattern)
+    |
+Grader simulates color blind vision
+    |
+Grader scores how much better it got  (0.0 - 1.0)
+    |
+Agent learns from that score
+
+```
 
 ## Real World Deployment Vision
 
-## To-Do
+Once trained, this agent becomes a browser extension that:
+* Scans any webpage the user visits
+* Detects the user's specific color blindness type automatically
+* Applies fixes in real time — recoloring, relabeling, adding patterns
+* Gets smarter with every plot it processes
+
+## To-Do (From Scaler Hackathon)
 
 - [ ] Setup Environment
-- [ ] 
+- [ ] Real-world Task simulation
+- [ ] OpenEnv spec compliance
+- [ ] Easy Task Code Written + Reward
+- [ ] Medium Task Code Written + Reward
+- [ ] Hard Task Code Written + Reward
+- [ ] Baseline Inference Script
+- [ ] Deploy to a HuggingFace Space
+- [ ] Containerized Execution
+- [ ] Documentation
+- [ ] HF Space deploys
+- [ ] Validator
+- [ ] Additional Endpoints to Expose
