@@ -1,0 +1,32 @@
+TASK_CONFIGS = {
+    "easy" : {
+        "n_categories" : 2,
+        "no_of_cb_types" : 1,
+        "max_steps" : None,
+        "n_points" : 100,
+        "color_weight" : 1.0,
+        "shape_weight" : 0.0,
+        "efficiency_bonus" : False,
+        "delta_E_threshold" : 20.0,
+    },
+    "medium" : {
+        "n_categories" : 5,
+        "no_of_cb_types" : 2,
+        "max_steps" : 20,
+        "n_points" : 100,
+        "color_weight" : 0.8,
+        "shape_weight" : 0.2,
+        "efficiency_bonus" : True,
+        "delta_E_threshold" : 20.0,
+    },
+    "hard" : {
+        "n_categories" : 10,
+        "no_of_cb_types" : 3,
+        "max_steps" : 20,
+        "n_points" : 100,
+        "color_weight" : 0.6,
+        "shape_weight" : 0.4,
+        "efficiency_bonus" : True,
+        "delta_E_threshold" : 15.0,
+    },
+}
