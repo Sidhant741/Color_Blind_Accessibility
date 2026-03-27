@@ -1,0 +1,104 @@
+"""
+Data models for the Color Blind Accessibility Environment.
+
+A reinforcement learning environment that trains an AI agent to fix 
+scatter plot data for the color blind users
+"""
+
+import re
+import numpy as np
+from typing import Any, Dict, List, Optional, Tuple
+from pydantic import Field, BaseModel, ConfigDict, field_validator, model_validator
+from enum import Enum
+
+# Support both in-repo and standalone imports
+try:
+    # In-repo imports (when running from OpenEnv repository)
+    from core.env_server.types import Action, Observation
+except ImportError:
+    try:
+        # Standalone imports with the current openenv package namespace
+        from openenv.core.env_server.types import Action, Observation
+    except ImportError:
+        # Backward-compatible standalone imports with the legacy namespace
+        from openenv_core.env_server.types import Action, Observation
+
+# ColorBlind Types
+class ColorBlindType(str, Enum):
+    DEUTERANOPIA = "deuteranopia"
+    PROTANOPIA = "protanopia"
+    TRITANOPIA = "tritanopia"
+
+# These are the Shape Constants
+class Shape(str, Enum):
+    CIRCLE = "o"
+    TRIANGLE_UP = "^"
+    STAR = "*"
+    CROSS = "x"
+    PLUS = "+"
+    PENTAGON = "p"
+    SQUARE = "s"
+
+# Category 
+class Category(BaseModel):
+    hex : str = Field(..., pattern=r'^#[0-9A-Fa-f]{6}$') # validates hex format
+    shape: Shape
+    points: List[Tuple[float, float]] = Field(default_factory=list)
+
+# State (full internal truth)
+class CBAState(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed = True)
+    scatter_plot : np.ndarray
+    categories : Dict[str, Category]
+    colorblind_types : List[ColorBlindType]
+    step : int
+    max_steps : Optional[int] = None 
+    fixes_applied : List[str] = Field(default_factory=list)
+    delta_E_matrix : Optional[Dict[Tuple[str, str], float]] = None
+    is_solved : bool = False
+
+# Observation (what agent sees)
+class CBAObservation(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed = True)
+    scatter_plot : np.ndarray
+    hex_code_per_category: Dict[str, str]
+    shape_per_category: Dict[str, str]
+    colorblind_types : List[str]
+    step : int
+    max_steps : Optional[int] = None
+    is_done : bool
+
+class FixType(str, Enum):
+    RECOLOR = "recolor"
+    RESHAPE = "reshape"
+
+# Action (agent's decision)    
+class CBAAction(Action):
+    target: str
+    fix_type: FixType
+    change_hex: Optional[str] = None
+    change_shape: Optional[Shape] = None
+
+    @field_validator('change_hex')
+    @classmethod
+    def validate_hex(cls, v):
+        if v is not None:
+            if not re.match(r'^#[0-9A-Fa-f]{6}$', v):
+                raise ValueError('new_hex must be a valid hex code like #FF0000')
+        return v
+
+    @model_validator(mode='after')
+    def validate_action_consistency(self):
+        if self.fix_type == FixType.RECOLOR:
+            if self.change_hex is None:
+                raise ValueError('new_hex must be provided when fix_type is RECOLOR')
+            if self.change_shape is not None:
+                raise ValueError('new_shape must be None when fix_type is RECOLOR')
+        
+        elif self.fix_type == FixType.RESHAPE:
+            if self.change_shape is None:
+                raise ValueError('new_shape must be provided when fix_type is RESHAPE')
+            if self.change_hex is not None:
+                raise ValueError('new_hex must be None when fix_type is RESHAPE')
+        
+        return self

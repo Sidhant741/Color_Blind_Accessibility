@@ -6,11 +6,11 @@ This document captures the full discussion about building a Color Blind Accessib
 
 ### Types of Color Blindness Supported
 
-| Type         | Description                       |
-|--------------|-----------------------------------|
-| Deueranopia  | Cannot distinguish red and green  |
-| Protanopia   | Red appears very dark or black    |
-| Tritanopia   | Blue and yellow are confused      |
+| Type          | Description                       |
+|---------------|-----------------------------------|
+| DEUTERANOPIA  | Cannot distinguish red and green  |
+| Protanopia    | Red appears very dark or black    |
+| Tritanopia    | Blue and yellow are confused      |
 
 ## Some Concepts : Tasks and Graders
 
@@ -23,11 +23,11 @@ Grader : It is a function that evaluates how well the agent solved the task. It 
 
 ### Difficulty Tiers - Overview
 
-| Level   | Task                                         | Grader Checks                          |
-|---------|----------------------------------------------|----------------------------------------|
-| Easy    | Fix a scatter plot with two similar color, one CB types, no budget          | Are points now distinguishable?        |
-| Medium  | Fix a scatter plot with 5-7 similar color, two CB types, soft budget        | CIEDE2000 Acceptable                    |
-| Hard    | Fix a scatter plot with 10-15 similar color, three CB types, strict budget  | CIEDE2000 Acceptable with minimum steps |
+| Level   | Task                                                                      | Grader Checks                           |
+|---------|---------------------------------------------------------------------------|-----------------------------------------|
+| Easy    | Fix a scatter plot with 2 similar color, one CB types, no budget          | Are points now distinguishable?         |
+| Medium  | Fix a scatter plot with 5 similar color, two CB types, soft budget        | CIEDE2000 Acceptable                    |
+| Hard    | Fix a scatter plot with 10 similar color, three CB types, strict budget   | CIEDE2000 Acceptable with minimum steps |
 
 ## Detailed Task Design
 
