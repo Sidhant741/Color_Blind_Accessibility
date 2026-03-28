@@ -47,26 +47,27 @@ class Category(BaseModel):
 
 # State (full internal truth)
 class CBAState(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed = True)
+    model_config = ConfigDict(arbitrary_types_allowed = True, frozen=False)
+    episode_id: str
     scatter_plot : np.ndarray
     categories : Dict[str, Category]
     colorblind_types : List[ColorBlindType]
-    step : int
+    step_count : int
     max_steps : Optional[int] = None 
     fixes_applied : List[str] = Field(default_factory=list)
-    delta_E_matrix : Optional[Dict[Tuple[str, str], float]] = None
-    is_solved : bool = False
+    delta_E_matrix: Dict[Tuple[str, str], Dict[ColorBlindType, float]] = Field(default_factory=dict)
+    is_solved : bool = False    # is solved means colors are fixed
 
 # Observation (what agent sees)
 class CBAObservation(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed = True)
+    model_config = ConfigDict(arbitrary_types_allowed = True, frozen=False)
     scatter_plot : np.ndarray
     hex_code_per_category: Dict[str, str]
-    shape_per_category: Dict[str, str]
+    shape_per_category: Dict[str, Shape]
     colorblind_types : List[str]
-    step : int
+    step_count : int
     max_steps : Optional[int] = None
-    is_done : bool
+    is_done : bool  # is_done means episode ended, it doesnt means we have fixed the colors
 
 class FixType(str, Enum):
     RECOLOR = "recolor"
