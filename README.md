@@ -338,10 +338,10 @@ Once trained, this agent becomes a browser extension that:
 
 ## To-Do (From Scaler Hackathon)
 
-- [ ] Setup Environment
-- [ ] Real-world Task simulation
+- [X] Setup Environment
+- [X] Real-world Task simulation
 - [ ] OpenEnv spec compliance
-- [ ] Easy Task Code Written + Reward
+- [X] Easy Task Code Written + Reward
 - [ ] Medium Task Code Written + Reward
 - [ ] Hard Task Code Written + Reward
 - [ ] Baseline Inference Script
@@ -349,5 +349,8 @@ Once trained, this agent becomes a browser extension that:
 - [ ] Containerized Execution
 - [ ] Documentation
 - [ ] HF Space deploys
-- [ ] Validator
+- [X] Validator
 - [ ] Additional Endpoints to Expose
+- [ ] Move the hardcoded value to config (Optional)
+- [ ] Better logic in _assign_broken_colors()
+- [ ] Grader.py write it later

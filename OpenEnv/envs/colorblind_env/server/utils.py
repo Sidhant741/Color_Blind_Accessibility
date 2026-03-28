@@ -1,5 +1,4 @@
 from colorspacious import cspace_convert
-from colorspacious import deltaE
 from skimage.color import deltaE_ciede2000
 
 # Takes a color value (using hex code) and return a color value (hex code)
@@ -23,9 +22,11 @@ def simulate_cb(hex_code, cb_type, severity=100):
         "tritanopia": "tritanomaly",
     }
 
+    cb_type_str = cb_type.value if hasattr(cb_type, 'value') else cb_type
+
     cvd_space = {
         "name" : "sRGB1+CVD",
-        "cvd_type": opia_to_anomaly_convert[cb_type],
+        "cvd_type": opia_to_anomaly_convert[cb_type_str],
         "severity": severity,
     }
 
@@ -85,6 +86,3 @@ def lab_to_rgb(lab):
 
     # scale back to [0,255]
     rgb_back = [int(x * 255) for x in rgb_back]
-    print(rgb_back)
-
-

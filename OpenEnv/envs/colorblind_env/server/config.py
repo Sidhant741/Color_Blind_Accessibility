@@ -7,7 +7,9 @@ TASK_CONFIGS = {
         "color_weight" : 1.0,
         "shape_weight" : 0.0,
         "efficiency_bonus" : False,
+        "efficiency_weight" : 0.1,
         "delta_E_threshold" : 20.0,
+        "l_shift": 0.1,
     },
     "medium" : {
         "n_categories" : 5,
@@ -16,8 +18,10 @@ TASK_CONFIGS = {
         "n_points" : 100,
         "color_weight" : 0.8,
         "shape_weight" : 0.2,
-        "efficiency_bonus" : True,
+        "efficiency_bonus" : False,
+        "efficiency_weight" : 0.1,
         "delta_E_threshold" : 20.0,
+        "l_shift" : 0.2,
     },
     "hard" : {
         "n_categories" : 10,
@@ -27,6 +31,8 @@ TASK_CONFIGS = {
         "color_weight" : 0.6,
         "shape_weight" : 0.4,
         "efficiency_bonus" : True,
+        "efficiency_weight" : 0.1,
         "delta_E_threshold" : 15.0,
+        "l_shift" : 0.3
     },
 }
