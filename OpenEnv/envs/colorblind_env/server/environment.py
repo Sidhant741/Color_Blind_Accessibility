@@ -19,33 +19,52 @@ from uuid import uuid4
 
 import numpy as np
 import random
-from .config import *
-from .utils import compute_delta_e, rgb_to_hex
 import matplotlib
 from itertools import combinations
 import copy
+import base64
+from PIL import Image
+import io
 
 matplotlib.use('Agg')  # Use non-interactive backend — required for tostring_rgb / buffer_rgba
 import matplotlib.pyplot as plt
 
-# Support both in-repo and standalone imports
+# # Support both in-repo and standalone imports
+# try:
+#     # In-repo imports (when running from OpenEnv repository)
+#     from core.env_server.interfaces import Environment
+#     from core.env_server.types import State
+
+#     from ..models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
+#     from .config import *
+#     from .utils import compute_delta_e, rgb_to_hex
+
+# except ImportError:
+#     from models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
+#     from config import *
+#     from utils import compute_delta_e, rgb_to_hex
+
+#     try:
+#         # Standalone imports with the current openenv package namespace
+#         from openenv.core.env_server.interfaces import Environment
+#         from openenv.core.env_server.types import State
+#     except ImportError:
+#         # Backward-compatible standalone imports with the legacy namespace
+#         from openenv_core.env_server.interfaces import Environment
+#         from openenv_core.env_server.types import State
+
+from openenv.core.env_server import Environment
+
 try:
-    # In-repo imports (when running from OpenEnv repository)
-    from core.env_server.interfaces import Environment
-    from core.env_server.types import State
-
     from ..models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
-except ImportError:
+    from .config import *
+    from .utils import compute_delta_e, rgb_to_hex
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
     from models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
-
-    try:
-        # Standalone imports with the current openenv package namespace
-        from openenv.core.env_server.interfaces import Environment
-        from openenv.core.env_server.types import State
-    except ImportError:
-        # Backward-compatible standalone imports with the legacy namespace
-        from openenv_core.env_server.interfaces import Environment
-        from openenv_core.env_server.types import State
+    from server.config import *
+    from server.utils import compute_delta_e, rgb_to_hex
 
 class CBAEnvironment(Environment):
     """
@@ -141,6 +160,7 @@ class CBAEnvironment(Environment):
  
         # Assign first category a random base color
         for attempt in range(max_retries):
+            print(f"Attempt {attempt}")  # add this
             # Generate random base color
             r = random.randint(30, 225)
             g = random.randint(30, 225)
@@ -185,6 +205,7 @@ class CBAEnvironment(Environment):
  
             if all_valid and len(valid_partners) == len(category_names):
                 # Assign colors to categories
+                print(f"Found valid pair at attempt {attempt}")  # add this
                 for i, name in enumerate(category_names):
                     self.categories[name] = self.categories[name].model_copy(
                         update={"hex": valid_partners[i]}
@@ -197,7 +218,12 @@ class CBAEnvironment(Environment):
         )
 
     def _render_scatter_plot(self, ):   # return an image
-        fig = plt.figure(figsize=(16, 10))
+        # a 16x10 inch figure at matplotlib's default DPI (100) gives a 
+        # 1000x1600x3 image = 4.8 million integers being sent as JSON. 
+        # That's why the browser is struggling to display it.
+        
+        # fig = plt.figure(figsize=(16, 10))        # A heavy computation bug
+        fig = plt.figure(figsize=(8, 6), dpi=72)  # default is 100
 
         for label_name, value_ in self.categories.items():
             hex_code = value_.hex
@@ -237,8 +263,10 @@ class CBAEnvironment(Environment):
             hex_code_per_category_observed[label_name] = value_.hex
             shape_per_category_observed[label_name] = value_.shape
 
+        # scatter_plot = base64.b64encode(self._state.scatter_plot.tobytes()).decode('utf-8')
         return CBAObservation(
             scatter_plot=self._state.scatter_plot,
+            scatter_plot_shape = self._state.scatter_plot_shape,  # read from state directly
             hex_code_per_category=hex_code_per_category_observed,
             shape_per_category=shape_per_category_observed,
             colorblind_types=self._state.colorblind_types,
@@ -246,6 +274,14 @@ class CBAEnvironment(Environment):
             max_steps=self._state.max_steps,
             is_done=self.is_done
         )
+    
+    def _encode_image(self, image: np.ndarray) -> str:
+        img = Image.fromarray(image)
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG')
+        img_b64 = base64.b64encode(buffer.getvalue())
+        return img_b64.decode('utf-8')
+
 
     def reset(self) -> CBAObservation:
         """
@@ -271,17 +307,31 @@ class CBAEnvironment(Environment):
         all_cb_types = list(ColorBlindType)
         self.colorblind_types = random.sample(all_cb_types, self.task_config["no_of_cb_types"])
 
+        print("Starting reset...")
         self.categories = self._generate_categories()
+        print("Categories generated")
         self._assign_broken_colors()
+        print("Broken colors assigned")
         self._compute_delta_e_matrix()
+        print("Delta E matrix computed")
 
         self.current_image = self._render_scatter_plot()
+        print("Scatter plot rendered")
 
-        self._state = CBAState(episode_id = str(uuid4()), step_count=0, 
-                        scatter_plot = self.current_image, categories=self.categories,
-                        colorblind_types = self.colorblind_types, max_steps=self.task_config['max_steps'],
-                        fixes_applied = self.fixes_applied, delta_E_matrix = self.delta_E_matrix,
-                        is_solved = self.is_solved)
+        scatter_plot_b64 = self._encode_image(self.current_image)
+
+        self._state = CBAState(
+            episode_id = str(uuid4()), 
+            step_count=0, 
+            scatter_plot = scatter_plot_b64, 
+            scatter_plot_shape = list(self.current_image.shape),
+            categories=self.categories,
+            colorblind_types = self.colorblind_types, 
+            max_steps=self.task_config['max_steps'],
+            fixes_applied = self.fixes_applied,
+            delta_E_matrix = self.delta_E_matrix,
+            is_solved = self.is_solved
+        )
         
         return self._build_observation()
 
@@ -294,9 +344,10 @@ class CBAEnvironment(Environment):
 
             for cb_type in self.colorblind_types:
                 delta = compute_delta_e(hex_i, hex_j, cb_type)
-                for_each_cb_delta_value[cb_type] = delta
+                for_each_cb_delta_value[cb_type.value] = delta
 
-            self.delta_E_matrix[(cat_i, cat_j)] = for_each_cb_delta_value
+            # self.delta_E_matrix[(cat_i, cat_j)] = for_each_cb_delta_value
+            self.delta_E_matrix[f"{cat_i}|{cat_j}"] = for_each_cb_delta_value
     
     def _check_done(self):
         is_solved_lst = []
@@ -331,8 +382,9 @@ class CBAEnvironment(Environment):
 
         for pair in self.delta_E_matrix:
             shape_score, color_score = 0, 0
+            cat_i, cat_j = pair.split("|")
             
-            shape_i, shape_j = self.categories[pair[0]].shape, self.categories[pair[1]].shape
+            shape_i, shape_j = self.categories[cat_i].shape, self.categories[cat_j].shape
             if shape_i != shape_j:
                 shape_score = 1
             
@@ -424,10 +476,17 @@ class CBAEnvironment(Environment):
         self.fixes_applied.append(fix_str)
 
         self._state.step_count = self.steps_taken
-        self._state.scatter_plot = self.current_image
+        # self._state.scatter_plot = self.current_image
+        self._state.scatter_plot = self._encode_image(self.current_image)
+        self._state.scatter_plot_shape = list(self.current_image.shape)
         self._state.categories = self.categories
         self._state.fixes_applied = self.fixes_applied
         self._state.delta_E_matrix = self.delta_E_matrix
         self._state.is_solved = self.is_solved
+
+        observation = self._build_observation()
+        observation.reward = reward
+        observation.done = self.is_done
         
-        return self._build_observation(), reward, self.is_done, {}
+        # return self._build_observation(), reward, self.is_done, {}
+        return observation

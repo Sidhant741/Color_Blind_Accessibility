@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-colorblind-env"
+version = "0.1.0"
+description = "Color Blind Accessibility Environment for OpenEnv - RL agent to fix scatter plots for color blind users"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core>=0.2.2",
+    "fastapi>=0.115.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.24.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "colorspacious>=1.1.2",
+    "scikit-image>=0.21.0",
+    "pillow>=10.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+server = "colorblind_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["colorblind_env", "colorblind_env.server"]
+package-dir = { "colorblind_env" = ".", "colorblind_env.server" = "server" }
