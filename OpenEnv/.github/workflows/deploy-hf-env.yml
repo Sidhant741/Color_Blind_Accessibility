@@ -7,7 +7,7 @@ on:
         description: "Comma-separated env names (empty means all deployable envs)"
         required: false
         type: string
-        default: ""
+        default: "colorblind_env"
       openenv_version:
         description: "Release version used for suffix and pinning (e.g. 0.2.1)"
         required: false
@@ -17,7 +17,7 @@ on:
         description: "Hugging Face namespace"
         required: false
         type: string
-        default: "openenv"
+        default: "Killua7531"
       private:
         description: "Deploy version-suffixed spaces as private"
         required: false
@@ -37,7 +37,7 @@ on:
         description: "Collection owner namespace"
         required: false
         type: string
-        default: "openenv"
+        default: "Killua7531"
 
 jobs:
   deploy:
