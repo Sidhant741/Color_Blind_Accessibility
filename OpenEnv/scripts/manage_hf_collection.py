@@ -26,10 +26,10 @@ except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore
 
 
-DEFAULT_COLLECTION_NAMESPACE = "openenv"
-DEFAULT_COLLECTION_SLUG = "openenv/environment-hub-68f16377abea1ea114fa0743"
-DEFAULT_VERSIONED_COLLECTION_TITLE_PREFIX = "OpenEnv Environment Hub"
-DEFAULT_GLOBAL_COLLECTION_TITLE = "OpenEnv Environment Hub"
+DEFAULT_COLLECTION_NAMESPACE = "Killua7531"
+DEFAULT_COLLECTION_SLUG = "Killua7531/environment-hub"
+DEFAULT_VERSIONED_COLLECTION_TITLE_PREFIX = "colorblind_env Environment Hub"
+DEFAULT_GLOBAL_COLLECTION_TITLE = "colorblind_env Environment Hub"
 DEFAULT_TAG_FILTER = "openenv"
 DEFAULT_GLOBAL_SCOPE = "tagged"
 FALLBACK_DEFAULT_VERSION = "0.2.0"
