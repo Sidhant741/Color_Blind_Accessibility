@@ -88,7 +88,7 @@ fi
 
 BASE_IMAGE_SHA=""
 BASE_IMAGE_REF=""
-HF_NAMESPACE="${HF_NAMESPACE:-}"
+HF_NAMESPACE="${HF_NAMESPACE:-Killua7531}"
 SPACE_SUFFIX="${SPACE_SUFFIX:-}"
 STAGING_DIR="hf-staging"
 HUB_TAG="openenv"
@@ -98,7 +98,7 @@ if [ -z "$DEFAULT_OPENENV_VERSION" ]; then
 fi
 OPENENV_VERSION="${OPENENV_VERSION:-$DEFAULT_OPENENV_VERSION}"
 OPENENV_GIT_REF="${OPENENV_GIT_REF:-}"
-COLLECTION_NAMESPACE="${COLLECTION_NAMESPACE:-openenv}"
+COLLECTION_NAMESPACE="${COLLECTION_NAMESPACE:-Killua7531}"
 COLLECTION_SLUG="${COLLECTION_SLUG:-}"
 PRIVATE=true
 DRY_RUN=false
@@ -569,6 +569,7 @@ create_readme() {
         chat_env) env_class="ChatEnv" ;;
         atari_env) env_class="AtariEnv" ;;
         openspiel_env) env_class="OpenSpielEnv" ;;
+        colorblind) env_class="ColorblindEnv" ;;
     esac
 
     if head -n 1 "$readme_source" | grep -q '^---$'; then
