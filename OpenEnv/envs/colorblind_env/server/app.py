@@ -28,7 +28,7 @@ except ImportError as e:
         raise
     # Standalone imports (when running via uvicorn server.app:app)
     from models import CBAAction, CBAObservation
-    from environment import CBAEnvironment
+    from server.environment import CBAEnvironment
 
 # Get configuration from environment variables
 task = os.getenv("CBA_TASK", "easy")

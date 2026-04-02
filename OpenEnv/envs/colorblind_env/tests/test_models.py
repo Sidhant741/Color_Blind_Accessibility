@@ -16,7 +16,6 @@ from models import (
     ColorBlindType
 )
 
-import numpy as np
 import pytest
 
 def test_category_valid():
@@ -47,24 +46,26 @@ def test_category_empty_points():
 def test_state_valid():
     cat = Category(hex="#FF0000", shape=Shape.CIRCLE)
     state = CBAState(
-        scatter_plot=np.zeros((100,100,3), dtype=np.uint8),
+        scatter_plot="base64-encoded-image",
+        scatter_plot_shape=[100, 100, 3],
         categories={"Class A": cat},
         colorblind_types=[ColorBlindType.DEUTERANOPIA],
-        step=0,
+        step_count=0,
         max_steps=10,
         fixes_applied=[],
-        is_solved=False
+        is_solved=False,
     )
-    assert state.step == 0
+    assert state.step_count == 0
     assert len(state.categories) == 1
-    assert state.scatter_plot.shape == (100,100,3)
+    assert state.scatter_plot == "base64-encoded-image"
 
 def test_state_optional_fields():
     state = CBAState(
-        scatter_plot=np.zeros((100,100,3), dtype=np.uint8),
+        scatter_plot="base64-encoded-image",
+        scatter_plot_shape=[10, 10, 3],
         categories={},
         colorblind_types=[],
-        step=0
+        step_count=0,
     )
     assert state.max_steps is None
     assert state.fixes_applied == []
@@ -72,28 +73,30 @@ def test_state_optional_fields():
 
 def test_observation_valid():
     obs = CBAObservation(
-        scatter_plot=np.zeros((200,200,3), dtype=np.uint8),
+        scatter_plot="base64-encoded-image",
+        scatter_plot_shape=[200, 200, 3],
         hex_code_per_category={"A": "#FF0000"},
-        shape_per_category={"A": Shape.CIRCLE.value},
-        colorblind_types=[ColorBlindType.DEUTERANOPIA.value],   # plural
-        step=2,
+        shape_per_category={"A": Shape.CIRCLE},
+        colorblind_types=[ColorBlindType.DEUTERANOPIA.value],
+        step_count=2,
         max_steps=10,
         is_done=False
     )
-    assert isinstance(obs.scatter_plot, np.ndarray)
+    assert isinstance(obs.scatter_plot, str)
     assert obs.hex_code_per_category["A"] == "#FF0000"
 
 def test_observation_arbitrary_type_allowed():
     obs = CBAObservation(
-        scatter_plot=np.zeros((100,100,3), dtype=np.uint8),
+        scatter_plot="base64-encoded-image",
+        scatter_plot_shape=[100, 100, 3],
         hex_code_per_category={},
         shape_per_category={},
-        colorblind_types=[],   # plural
-        step=0,
+        colorblind_types=[],
+        step_count=0,
         max_steps=10,
         is_done=False
     )
-    assert isinstance(obs.scatter_plot, np.ndarray)
+    assert isinstance(obs.scatter_plot, str)
 
 def test_action_recolor_valid():
     action = CBAAction(
@@ -146,9 +149,10 @@ def test_state_with_large_points():
         points=[(i, i*2) for i in range(1000)]
     )
     state = CBAState(
-        scatter_plot=np.zeros((100,100,3), dtype=np.uint8),
+        scatter_plot="base64-encoded-image",
+        scatter_plot_shape=[100, 100, 3],
         categories={"A": cat},
         colorblind_types=[ColorBlindType.DEUTERANOPIA],
-        step=0
+        step_count=0,
     )
     assert len(state.categories["A"].points) == 1000

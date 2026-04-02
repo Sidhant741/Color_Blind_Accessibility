@@ -49,7 +49,7 @@ def test_simulate_cb_invalid_type():
 def test_compute_delta_e_same_colors():
     """Delta E between identical colors should be 0."""
     delta = compute_delta_e("#FF0000", "#FF0000", "deuteranopia")
-    assert delta == 0.0
+    assert delta == pytest.approx(0.0, abs=1e-6)
 
 def test_compute_delta_e_different_colors():
     """Delta E between different colors should be positive."""
