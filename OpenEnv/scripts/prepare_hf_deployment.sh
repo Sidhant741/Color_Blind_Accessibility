@@ -284,25 +284,25 @@ is_deployable_env() {
     local env_name="$1"
     warn "DEBUG pwd: $(pwd)"
     warn "DEBUG checking dir: envs/$env_name → $([ -d "envs/$env_name" ] && echo EXISTS || echo MISSING)"
-    warn "DEBUG checking DOCKERFILE: envs/$env_name/DOCKERFILE → $([ -f "envs/$env_name/DOCKERFILE" ] && echo EXISTS || echo MISSING)"
-    warn "DEBUG checking server/DOCKERFILE: envs/$env_name/server/DOCKERFILE → $([ -f "envs/$env_name/server/DOCKERFILE" ] && echo EXISTS || echo MISSING)"
+    warn "DEBUG checking Dockerfile: envs/$env_name/Dockerfile → $([ -f "envs/$env_name/Dockerfile" ] && echo EXISTS || echo MISSING)"
+    warn "DEBUG checking server/Dockerfile: envs/$env_name/server/Dockerfile → $([ -f "envs/$env_name/server/Dockerfile" ] && echo EXISTS || echo MISSING)"
     warn "DEBUG checking README: envs/$env_name/README.md → $([ -f "envs/$env_name/README.md" ] && echo EXISTS || echo MISSING)"
     warn "DEBUG ls envs/: $(ls envs/ 2>&1)"
     warn "DEBUG ls envs/$env_name/: $(ls "envs/$env_name/" 2>&1)"
 
     [ -d "envs/$env_name" ] &&
-        { [ -f "envs/$env_name/server/DOCKERFILE" ] || [ -f "envs/$env_name/DOCKERFILE" ]; } &&
+        { [ -f "envs/$env_name/server/Dockerfile" ] || [ -f "envs/$env_name/Dockerfile" ]; } &&
         [ -f "envs/$env_name/README.md" ]
 }
 
 resolve_env_dockerfile() {
     local env_name="$1"
-    if [ -f "envs/$env_name/server/DOCKERFILE" ]; then
-        printf "%s" "envs/$env_name/server/DOCKERFILE"
+    if [ -f "envs/$env_name/server/Dockerfile" ]; then
+        printf "%s" "envs/$env_name/server/Dockerfile"
         return 0
     fi
-    if [ -f "envs/$env_name/DOCKERFILE" ]; then
-        printf "%s" "envs/$env_name/DOCKERFILE"
+    if [ -f "envs/$env_name/Dockerfile" ]; then
+        printf "%s" "envs/$env_name/Dockerfile"
         return 0
     fi
     return 1
@@ -393,35 +393,35 @@ create_environment_dockerfile() {
         error "Could not find Dockerfile for $env_name"
     }
 
-    cp "$dockerfile_path" "$stage_dir/DOCKERFILE"
+    cp "$dockerfile_path" "$stage_dir/Dockerfile"
 
     if [ -f "$prepare_script" ]; then
         chmod +x "$prepare_script"
-        "$prepare_script" "$stage_dir/DOCKERFILE" "$BASE_IMAGE_REF"
+        "$prepare_script" "$stage_dir/Dockerfile" "$BASE_IMAGE_REF"
     else
         # Handle common base-image patterns.
-        sed_inplace "s|^ARG BASE_IMAGE=.*$|ARG BASE_IMAGE=$BASE_IMAGE_REF|g" "$stage_dir/DOCKERFILE"
-        sed_inplace "s|FROM \${BASE_IMAGE}|FROM $BASE_IMAGE_REF|g" "$stage_dir/DOCKERFILE"
-        sed_inplace "s|FROM openenv-base:latest|FROM $BASE_IMAGE_REF|g" "$stage_dir/DOCKERFILE"
-        sed_inplace "s|FROM envtorch-base:latest|FROM $BASE_IMAGE_REF|g" "$stage_dir/DOCKERFILE"
+        sed_inplace "s|^ARG BASE_IMAGE=.*$|ARG BASE_IMAGE=$BASE_IMAGE_REF|g" "$stage_dir/Dockerfile"
+        sed_inplace "s|FROM \${BASE_IMAGE}|FROM $BASE_IMAGE_REF|g" "$stage_dir/Dockerfile"
+        sed_inplace "s|FROM openenv-base:latest|FROM $BASE_IMAGE_REF|g" "$stage_dir/Dockerfile"
+        sed_inplace "s|FROM envtorch-base:latest|FROM $BASE_IMAGE_REF|g" "$stage_dir/Dockerfile"
     fi
 
     sed_inplace \
         "s|git+https://github.com/meta-pytorch/OpenEnv.git@main|git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF|g" \
-        "$stage_dir/DOCKERFILE"
+        "$stage_dir/Dockerfile"
     sed_inplace \
         "s|git+https://github.com/meta-pytorch/OpenEnv.git\"|git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
-        "$stage_dir/DOCKERFILE"
+        "$stage_dir/Dockerfile"
     sed_inplace \
         "s|git+https://github.com/meta-pytorch/OpenEnv.git$|git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF|g" \
-        "$stage_dir/DOCKERFILE"
+        "$stage_dir/Dockerfile"
     sed_inplace \
         "s|\"openenv-core\\[core\\][^\"]*\"|\"openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
-        "$stage_dir/DOCKERFILE"
+        "$stage_dir/Dockerfile"
 
     # Some base images include older uv versions that fail on a subset of env
     # pyproject layouts. Insert a deterministic uv install before the first sync.
-    if grep -q "RUN --mount=type=cache,target=/root/.cache/uv" "$stage_dir/DOCKERFILE"; then
+    if grep -q "RUN --mount=type=cache,target=/root/.cache/uv" "$stage_dir/Dockerfile"; then
         awk '
             BEGIN { inserted = 0 }
             {
@@ -434,19 +434,19 @@ create_environment_dockerfile() {
                 }
                 print
             }
-        ' "$stage_dir/DOCKERFILE" > "$tmp_dockerfile"
-        mv "$tmp_dockerfile" "$stage_dir/DOCKERFILE"
+        ' "$stage_dir/Dockerfile" > "$tmp_dockerfile"
+        mv "$tmp_dockerfile" "$stage_dir/Dockerfile"
 
         # Some environment lockfiles are intentionally loose and may be regenerated
         # between the two uv sync passes. Avoid hard-failing on --frozen in Spaces.
-        sed_inplace "s|uv sync --frozen|uv sync|g" "$stage_dir/DOCKERFILE"
+        sed_inplace "s|uv sync --frozen|uv sync|g" "$stage_dir/Dockerfile"
     fi
 
     # Legacy Dockerfiles that copy src/core often rely on imports from both
     # `core.*` and `openenv.*`. Copy both packages under /app/src, then expose
     # only the shared parent directory to avoid shadowing stdlib modules such
     # as `types` with files under /app/src/core.
-    if grep -q "COPY src/core/" "$stage_dir/DOCKERFILE"; then
+    if grep -q "COPY src/core/" "$stage_dir/Dockerfile"; then
         awk '
             /COPY src\/core\// && !inserted {
                 print
@@ -455,23 +455,23 @@ create_environment_dockerfile() {
                 next
             }
             { print }
-        ' "$stage_dir/DOCKERFILE" > "$tmp_dockerfile"
-        mv "$tmp_dockerfile" "$stage_dir/DOCKERFILE"
+        ' "$stage_dir/Dockerfile" > "$tmp_dockerfile"
+        mv "$tmp_dockerfile" "$stage_dir/Dockerfile"
 
-        if grep -q '^ENV PYTHONPATH=' "$stage_dir/DOCKERFILE"; then
+        if grep -q '^ENV PYTHONPATH=' "$stage_dir/Dockerfile"; then
             sed_inplace \
                 '/^ENV PYTHONPATH=/ { /\/app\/src/! s|^ENV PYTHONPATH=|ENV PYTHONPATH=/app/src:|; }' \
-                "$stage_dir/DOCKERFILE"
+                "$stage_dir/Dockerfile"
         else
-            ensure_trailing_newline "$stage_dir/DOCKERFILE"
-            echo "ENV PYTHONPATH=/app/src:\${PYTHONPATH}" >> "$stage_dir/DOCKERFILE"
+            ensure_trailing_newline "$stage_dir/Dockerfile"
+            echo "ENV PYTHONPATH=/app/src:\${PYTHONPATH}" >> "$stage_dir/Dockerfile"
         fi
     fi
 
-    if ! grep -q '^ENV ENABLE_WEB_INTERFACE=' "$stage_dir/DOCKERFILE"; then
-        ensure_trailing_newline "$stage_dir/DOCKERFILE"
-        echo "" >> "$stage_dir/DOCKERFILE"
-        echo "ENV ENABLE_WEB_INTERFACE=true" >> "$stage_dir/DOCKERFILE"
+    if ! grep -q '^ENV ENABLE_WEB_INTERFACE=' "$stage_dir/Dockerfile"; then
+        ensure_trailing_newline "$stage_dir/Dockerfile"
+        echo "" >> "$stage_dir/Dockerfile"
+        echo "ENV ENABLE_WEB_INTERFACE=true" >> "$stage_dir/Dockerfile"
     fi
 }
 
