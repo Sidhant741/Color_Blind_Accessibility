@@ -31,10 +31,6 @@ Version pinning:
   --openenv-version <ref>          Pin OpenEnv git refs to this tag/ref
                                    (default: project version from pyproject.toml)
 
-Collection update:
-  --collection-namespace <owner>   Collection owner namespace (default: openenv)
-  --collection-slug <slug>         Explicit collection slug override
-  --skip-collection                Skip collection update step
 
 Compatibility positional args:
   scripts/prepare_hf_deployment.sh <env_name> [base_image_sha]
@@ -98,8 +94,8 @@ if [ -z "$DEFAULT_OPENENV_VERSION" ]; then
 fi
 OPENENV_VERSION="${OPENENV_VERSION:-$DEFAULT_OPENENV_VERSION}"
 OPENENV_GIT_REF="${OPENENV_GIT_REF:-}"
-COLLECTION_NAMESPACE="${COLLECTION_NAMESPACE:-Killua7531}"
-COLLECTION_SLUG="${COLLECTION_SLUG:-}"
+#COLLECTION_NAMESPACE="${COLLECTION_NAMESPACE:-Killua7531}"
+#COLLECTION_SLUG="${COLLECTION_SLUG:-}"
 PRIVATE=true
 DRY_RUN=false
 DEPLOY_ALL=true
@@ -209,18 +205,18 @@ while [[ $# -gt 0 ]]; do
             OPENENV_VERSION="$2"
             shift 2
             ;;
-        --collection-namespace)
-            COLLECTION_NAMESPACE="$2"
-            shift 2
-            ;;
-        --collection-slug)
-            COLLECTION_SLUG="$2"
-            shift 2
-            ;;
-        --skip-collection)
-            SKIP_COLLECTION=true
-            shift
-            ;;
+       # --collection-namespace)
+            #COLLECTION_NAMESPACE="$2"
+            #shift 2
+            #;;
+       # --collection-slug)
+            #COLLECTION_SLUG="$2"
+            #shift 2
+            #;;
+       # --skip-collection)
+            #SKIP_COLLECTION=true
+            #shift
+            #;;
         -h|--help)
             usage
             exit 0
@@ -278,21 +274,35 @@ if ! command -v hf >/dev/null 2>&1; then
     fi
 fi
 
+#is_deployable_env() {
+    #local env_name="$1"
+    #[ -d "envs/$env_name" ] &&
+       # { [ -f "envs/$env_name/server/Dockerfile" ] || [ -f "envs/$env_name/Dockerfile" ]; } &&
+      #  [ -f "envs/$env_name/README.md" ]
+#}
 is_deployable_env() {
     local env_name="$1"
+    warn "DEBUG pwd: $(pwd)"
+    warn "DEBUG checking dir: envs/$env_name → $([ -d "envs/$env_name" ] && echo EXISTS || echo MISSING)"
+    warn "DEBUG checking DOCKERFILE: envs/$env_name/DOCKERFILE → $([ -f "envs/$env_name/DOCKERFILE" ] && echo EXISTS || echo MISSING)"
+    warn "DEBUG checking server/DOCKERFILE: envs/$env_name/server/DOCKERFILE → $([ -f "envs/$env_name/server/DOCKERFILE" ] && echo EXISTS || echo MISSING)"
+    warn "DEBUG checking README: envs/$env_name/README.md → $([ -f "envs/$env_name/README.md" ] && echo EXISTS || echo MISSING)"
+    warn "DEBUG ls envs/: $(ls envs/ 2>&1)"
+    warn "DEBUG ls envs/$env_name/: $(ls "envs/$env_name/" 2>&1)"
+
     [ -d "envs/$env_name" ] &&
-        { [ -f "envs/$env_name/server/Dockerfile" ] || [ -f "envs/$env_name/Dockerfile" ]; } &&
+        { [ -f "envs/$env_name/server/DOCKERFILE" ] || [ -f "envs/$env_name/DOCKERFILE" ]; } &&
         [ -f "envs/$env_name/README.md" ]
 }
 
 resolve_env_dockerfile() {
     local env_name="$1"
-    if [ -f "envs/$env_name/server/Dockerfile" ]; then
-        printf "%s" "envs/$env_name/server/Dockerfile"
+    if [ -f "envs/$env_name/server/DOCKERFILE" ]; then
+        printf "%s" "envs/$env_name/server/DOCKERFILE"
         return 0
     fi
-    if [ -f "envs/$env_name/Dockerfile" ]; then
-        printf "%s" "envs/$env_name/Dockerfile"
+    if [ -f "envs/$env_name/DOCKERFILE" ]; then
+        printf "%s" "envs/$env_name/DOCKERFILE"
         return 0
     fi
     return 1
@@ -383,35 +393,35 @@ create_environment_dockerfile() {
         error "Could not find Dockerfile for $env_name"
     }
 
-    cp "$dockerfile_path" "$stage_dir/Dockerfile"
+    cp "$dockerfile_path" "$stage_dir/DOCKERFILE"
 
     if [ -f "$prepare_script" ]; then
         chmod +x "$prepare_script"
-        "$prepare_script" "$stage_dir/Dockerfile" "$BASE_IMAGE_REF"
+        "$prepare_script" "$stage_dir/DOCKERFILE" "$BASE_IMAGE_REF"
     else
         # Handle common base-image patterns.
-        sed_inplace "s|^ARG BASE_IMAGE=.*$|ARG BASE_IMAGE=$BASE_IMAGE_REF|g" "$stage_dir/Dockerfile"
-        sed_inplace "s|FROM \${BASE_IMAGE}|FROM $BASE_IMAGE_REF|g" "$stage_dir/Dockerfile"
-        sed_inplace "s|FROM openenv-base:latest|FROM $BASE_IMAGE_REF|g" "$stage_dir/Dockerfile"
-        sed_inplace "s|FROM envtorch-base:latest|FROM $BASE_IMAGE_REF|g" "$stage_dir/Dockerfile"
+        sed_inplace "s|^ARG BASE_IMAGE=.*$|ARG BASE_IMAGE=$BASE_IMAGE_REF|g" "$stage_dir/DOCKERFILE"
+        sed_inplace "s|FROM \${BASE_IMAGE}|FROM $BASE_IMAGE_REF|g" "$stage_dir/DOCKERFILE"
+        sed_inplace "s|FROM openenv-base:latest|FROM $BASE_IMAGE_REF|g" "$stage_dir/DOCKERFILE"
+        sed_inplace "s|FROM envtorch-base:latest|FROM $BASE_IMAGE_REF|g" "$stage_dir/DOCKERFILE"
     fi
 
     sed_inplace \
         "s|git+https://github.com/meta-pytorch/OpenEnv.git@main|git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF|g" \
-        "$stage_dir/Dockerfile"
+        "$stage_dir/DOCKERFILE"
     sed_inplace \
         "s|git+https://github.com/meta-pytorch/OpenEnv.git\"|git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
-        "$stage_dir/Dockerfile"
+        "$stage_dir/DOCKERFILE"
     sed_inplace \
         "s|git+https://github.com/meta-pytorch/OpenEnv.git$|git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF|g" \
-        "$stage_dir/Dockerfile"
+        "$stage_dir/DOCKERFILE"
     sed_inplace \
         "s|\"openenv-core\\[core\\][^\"]*\"|\"openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
-        "$stage_dir/Dockerfile"
+        "$stage_dir/DOCKERFILE"
 
     # Some base images include older uv versions that fail on a subset of env
     # pyproject layouts. Insert a deterministic uv install before the first sync.
-    if grep -q "RUN --mount=type=cache,target=/root/.cache/uv" "$stage_dir/Dockerfile"; then
+    if grep -q "RUN --mount=type=cache,target=/root/.cache/uv" "$stage_dir/DOCKERFILE"; then
         awk '
             BEGIN { inserted = 0 }
             {
@@ -424,19 +434,19 @@ create_environment_dockerfile() {
                 }
                 print
             }
-        ' "$stage_dir/Dockerfile" > "$tmp_dockerfile"
-        mv "$tmp_dockerfile" "$stage_dir/Dockerfile"
+        ' "$stage_dir/DOCKERFILE" > "$tmp_dockerfile"
+        mv "$tmp_dockerfile" "$stage_dir/DOCKERFILE"
 
         # Some environment lockfiles are intentionally loose and may be regenerated
         # between the two uv sync passes. Avoid hard-failing on --frozen in Spaces.
-        sed_inplace "s|uv sync --frozen|uv sync|g" "$stage_dir/Dockerfile"
+        sed_inplace "s|uv sync --frozen|uv sync|g" "$stage_dir/DOCKERFILE"
     fi
 
     # Legacy Dockerfiles that copy src/core often rely on imports from both
     # `core.*` and `openenv.*`. Copy both packages under /app/src, then expose
     # only the shared parent directory to avoid shadowing stdlib modules such
     # as `types` with files under /app/src/core.
-    if grep -q "COPY src/core/" "$stage_dir/Dockerfile"; then
+    if grep -q "COPY src/core/" "$stage_dir/DOCKERFILE"; then
         awk '
             /COPY src\/core\// && !inserted {
                 print
@@ -445,23 +455,23 @@ create_environment_dockerfile() {
                 next
             }
             { print }
-        ' "$stage_dir/Dockerfile" > "$tmp_dockerfile"
-        mv "$tmp_dockerfile" "$stage_dir/Dockerfile"
+        ' "$stage_dir/DOCKERFILE" > "$tmp_dockerfile"
+        mv "$tmp_dockerfile" "$stage_dir/DOCKERFILE"
 
-        if grep -q '^ENV PYTHONPATH=' "$stage_dir/Dockerfile"; then
+        if grep -q '^ENV PYTHONPATH=' "$stage_dir/DOCKERFILE"; then
             sed_inplace \
                 '/^ENV PYTHONPATH=/ { /\/app\/src/! s|^ENV PYTHONPATH=|ENV PYTHONPATH=/app/src:|; }' \
-                "$stage_dir/Dockerfile"
+                "$stage_dir/DOCKERFILE"
         else
-            ensure_trailing_newline "$stage_dir/Dockerfile"
-            echo "ENV PYTHONPATH=/app/src:\${PYTHONPATH}" >> "$stage_dir/Dockerfile"
+            ensure_trailing_newline "$stage_dir/DOCKERFILE"
+            echo "ENV PYTHONPATH=/app/src:\${PYTHONPATH}" >> "$stage_dir/DOCKERFILE"
         fi
     fi
 
-    if ! grep -q '^ENV ENABLE_WEB_INTERFACE=' "$stage_dir/Dockerfile"; then
-        ensure_trailing_newline "$stage_dir/Dockerfile"
-        echo "" >> "$stage_dir/Dockerfile"
-        echo "ENV ENABLE_WEB_INTERFACE=true" >> "$stage_dir/Dockerfile"
+    if ! grep -q '^ENV ENABLE_WEB_INTERFACE=' "$stage_dir/DOCKERFILE"; then
+        ensure_trailing_newline "$stage_dir/DOCKERFILE"
+        echo "" >> "$stage_dir/DOCKERFILE"
+        echo "ENV ENABLE_WEB_INTERFACE=true" >> "$stage_dir/DOCKERFILE"
     fi
 }
 
@@ -564,12 +574,12 @@ create_readme() {
     local env_class="Env"
 
     case "$env_name" in
-        echo_env) env_class="EchoEnv" ;;
-        coding_env) env_class="CodingEnv" ;;
-        chat_env) env_class="ChatEnv" ;;
-        atari_env) env_class="AtariEnv" ;;
-        openspiel_env) env_class="OpenSpielEnv" ;;
-        colorblind) env_class="ColorblindEnv" ;;
+        #echo_env) env_class="EchoEnv" ;;
+        #coding_env) env_class="CodingEnv" ;;
+        #chat_env) env_class="ChatEnv" ;;
+        #atari_env) env_class="AtariEnv" ;;
+        #openspiel_env) env_class="OpenSpielEnv" ;;
+        colorblind_env) env_class="ColorblindEnv" ;;
     esac
 
     if head -n 1 "$readme_source" | grep -q '^---$'; then
@@ -650,8 +660,8 @@ prepare_stage() {
     #  - openenv/* imports at /app/src/core/openenv/*
     if [ -d "$stage_dir/src/openenv" ]; then
         mkdir -p "$stage_dir/src/core"
-        if [ -d "$stage_dir/src/openenv/core" ]; then
-            cp -R "$stage_dir/src/openenv/core/." "$stage_dir/src/core/"
+        if [ -d "$stage_dir/src/openenv_core" ]; then
+            cp -R "$stage_dir/src/openenv_core/." "$stage_dir/src/core/"
         fi
         mkdir -p "$stage_dir/src/core/openenv"
         cp -R "$stage_dir/src/openenv/." "$stage_dir/src/core/openenv/"
@@ -771,12 +781,12 @@ update_collection() {
         "$python_bin"
         scripts/manage_hf_collection.py
         --version "$OPENENV_VERSION"
-        --collection-namespace "$COLLECTION_NAMESPACE"
-        --skip-global-collection
+        #--collection-namespace "$COLLECTION_NAMESPACE"
+        #--skip-global-collection
     )
-    if [ -n "$COLLECTION_SLUG" ]; then
-        cmd+=(--collection-slug "$COLLECTION_SLUG")
-    fi
+    #if [ -n "$COLLECTION_SLUG" ]; then
+        #cmd+=(--collection-slug "$COLLECTION_SLUG")
+    #fi
     if [ "$DRY_RUN" = true ]; then
         cmd+=(--dry-run)
     fi
