@@ -129,9 +129,10 @@ class TestCBAEnvironment:
     def test_build_observation(self, env_easy):
         obs = env_easy.reset()
         # Verify attribute values
-        assert obs.scatter_plot is env_easy.current_image
+        assert obs.scatter_plot == env_easy._state.scatter_plot
+        assert obs.scatter_plot_shape == env_easy._state.scatter_plot_shape
         assert obs.hex_code_per_category == {name: cat.hex for name, cat in env_easy.categories.items()}
-        assert obs.shape_per_category == {name: cat.shape.value for name, cat in env_easy.categories.items()}
+        assert obs.shape_per_category == {name: cat.shape for name, cat in env_easy.categories.items()}
         assert obs.colorblind_types == [cb.value for cb in env_easy.colorblind_types]
         assert obs.step_count == env_easy.steps_taken
         assert obs.max_steps == env_easy.task_config["max_steps"]
@@ -147,13 +148,17 @@ class TestCBAEnvironment:
         env_easy._compute_delta_e_matrix()
         categories = list(env_easy.categories.keys())
         n_cats = len(categories)
-        expected_pairs = [(categories[i], categories[j]) for i in range(n_cats) for j in range(i+1, n_cats)]
+        expected_pairs = [
+            f"{categories[i]}|{categories[j]}"
+            for i in range(n_cats)
+            for j in range(i + 1, n_cats)
+        ]
         assert set(env_easy.delta_E_matrix.keys()) == set(expected_pairs)
         for pair, deltas in env_easy.delta_E_matrix.items():
             assert isinstance(deltas, dict)
             for cb_type in env_easy.colorblind_types:
-                assert cb_type in deltas
-                assert isinstance(deltas[cb_type], float)
+                assert cb_type.value in deltas
+                assert isinstance(deltas[cb_type.value], float)
 
     def test_check_done_easy(self, env_easy):
         env_easy.reset()
@@ -166,7 +171,7 @@ class TestCBAEnvironment:
         threshold = env_easy.task_config['delta_E_threshold']
         for pair in env_easy.delta_E_matrix:
             for cb_type in env_easy.colorblind_types:
-                env_easy.delta_E_matrix[pair][cb_type] = threshold + 1
+                env_easy.delta_E_matrix[pair][cb_type.value] = threshold + 1
         env_easy._check_done()
         assert env_easy.is_done is True
 
@@ -177,7 +182,7 @@ class TestCBAEnvironment:
         threshold = env_medium.task_config['delta_E_threshold']
 
         # Setup a single pair with low delta (unsolved)
-        env_medium.delta_E_matrix = {("A", "B"): {ColorBlindType.DEUTERANOPIA: threshold - 5}}
+        env_medium.delta_E_matrix = {"A|B": {ColorBlindType.DEUTERANOPIA.value: threshold - 5}}
         env_medium.colorblind_types = [ColorBlindType.DEUTERANOPIA]
         env_medium.steps_taken = 0
         env_medium.is_solved = False
@@ -188,7 +193,7 @@ class TestCBAEnvironment:
         assert env_medium.is_done is False
 
         # Solved: set delta above threshold
-        env_medium.delta_E_matrix[("A", "B")][ColorBlindType.DEUTERANOPIA] = threshold + 1
+        env_medium.delta_E_matrix["A|B"][ColorBlindType.DEUTERANOPIA.value] = threshold + 1
         env_medium._check_done()
         assert env_medium.is_done is True
 
@@ -204,9 +209,9 @@ class TestCBAEnvironment:
     def test_compute_reward_core(self, env_easy):
         # Create a controlled state with delta_E matrix and dummy categories
         env_easy.delta_E_matrix = {
-            ("A", "B"): {ColorBlindType.DEUTERANOPIA: 10.0, ColorBlindType.PROTANOPIA: 20.0},
-            ("A", "C"): {ColorBlindType.DEUTERANOPIA: 30.0, ColorBlindType.PROTANOPIA: 40.0},
-            ("B", "C"): {ColorBlindType.DEUTERANOPIA: 50.0, ColorBlindType.PROTANOPIA: 60.0},
+            "A|B": {ColorBlindType.DEUTERANOPIA.value: 10.0, ColorBlindType.PROTANOPIA.value: 20.0},
+            "A|C": {ColorBlindType.DEUTERANOPIA.value: 30.0, ColorBlindType.PROTANOPIA.value: 40.0},
+            "B|C": {ColorBlindType.DEUTERANOPIA.value: 50.0, ColorBlindType.PROTANOPIA.value: 60.0},
         }
         env_easy.colorblind_types = [ColorBlindType.DEUTERANOPIA, ColorBlindType.PROTANOPIA]
 
@@ -231,7 +236,7 @@ class TestCBAEnvironment:
             "B": MagicMock(shape=Shape.SQUARE),
         }
         env_medium.delta_E_matrix = {
-            ("A", "B"): {ColorBlindType.DEUTERANOPIA: 10.0}
+            "A|B": {ColorBlindType.DEUTERANOPIA.value: 10.0}
         }
         env_medium.colorblind_types = [ColorBlindType.DEUTERANOPIA]
         reward = env_medium._compute_reward(action=None, previous_delta_E_matrix=None)
@@ -244,8 +249,8 @@ class TestCBAEnvironment:
         target = "A"
         threshold = env_easy.task_config['delta_E_threshold']
         previous_matrix = {
-            ("A", "B"): {ColorBlindType.DEUTERANOPIA: threshold + 1},
-            ("A", "C"): {ColorBlindType.DEUTERANOPIA: threshold + 2},
+            "A|B": {ColorBlindType.DEUTERANOPIA.value: threshold + 1},
+            "A|C": {ColorBlindType.DEUTERANOPIA.value: threshold + 2},
         }
         # Current state same as previous (no change)
         env_easy.delta_E_matrix = previous_matrix
@@ -279,13 +284,13 @@ class TestCBAEnvironment:
         # Actually regression penalty applies regardless of solved status. We just need core to drop.
         # To avoid redundant penalty, make previous deltas below threshold.
         prev_matrix = {
-            ("A", "B"): {ColorBlindType.DEUTERANOPIA: threshold - 1},
-            ("A", "C"): {ColorBlindType.DEUTERANOPIA: threshold - 1},
+            "A|B": {ColorBlindType.DEUTERANOPIA.value: threshold - 1},
+            "A|C": {ColorBlindType.DEUTERANOPIA.value: threshold - 1},
         }
         # Current state: lower core
         curr_matrix = {
-            ("A", "B"): {ColorBlindType.DEUTERANOPIA: 10.0},
-            ("A", "C"): {ColorBlindType.DEUTERANOPIA: 10.0},
+            "A|B": {ColorBlindType.DEUTERANOPIA.value: 10.0},
+            "A|C": {ColorBlindType.DEUTERANOPIA.value: 10.0},
         }
         env_easy.delta_E_matrix = curr_matrix
         env_easy.colorblind_types = [ColorBlindType.DEUTERANOPIA]
@@ -319,7 +324,7 @@ class TestCBAEnvironment:
     def test_compute_reward_efficiency_bonus(self, env_hard):
         # For hard task, efficiency bonus is added when core_reward >= 0.8 and steps < max_steps
         env_hard.delta_E_matrix = {
-            ("A", "B"): {ColorBlindType.DEUTERANOPIA: 40.0},
+            "A|B": {ColorBlindType.DEUTERANOPIA.value: 40.0},
         }
         env_hard.colorblind_types = [ColorBlindType.DEUTERANOPIA]
         env_hard.steps_taken = 3
@@ -339,7 +344,7 @@ class TestCBAEnvironment:
     def test_compute_reward_medium_penalty(self, env_medium):
         # For medium task, penalty for exceeding max steps
         env_medium.delta_E_matrix = {
-            ("A", "B"): {ColorBlindType.DEUTERANOPIA: 40.0},
+            "A|B": {ColorBlindType.DEUTERANOPIA.value: 40.0},
         }
         env_medium.colorblind_types = [ColorBlindType.DEUTERANOPIA]
         env_medium.steps_taken = 12
@@ -364,7 +369,7 @@ class TestCBAEnvironment:
             fix_type=FixType.RECOLOR,
             change_hex="#123456"
         )
-        obs, reward, done, info = env_easy.step(action)
+        obs = env_easy.step(action)
         # Check category updated
         updated_cat = env_easy.categories["Class A"]
         assert updated_cat.hex == "#123456"
@@ -373,11 +378,11 @@ class TestCBAEnvironment:
         assert env_easy.steps_taken == 1
         # Check fixes_applied appended
         assert len(env_easy.fixes_applied) == 1
-        assert "RECOLOR Class A → #123456" in env_easy.fixes_applied[0]
+        assert "FixType.RECOLOR Class A → #123456" in env_easy.fixes_applied[0]
         # Check observation contains updated image
         assert hasattr(obs, "scatter_plot")
         # Check reward is computed (non-negative)
-        assert 0 <= reward <= 1
+        assert 0 <= obs.reward <= 1
         # Done may become True if solved (easy task solved after recolor maybe)
         # We don't assert done state here.
 
@@ -389,7 +394,7 @@ class TestCBAEnvironment:
             fix_type=FixType.RESHAPE,
             change_shape=Shape.SQUARE
         )
-        obs, reward, done, info = env_easy.step(action)
+        obs = env_easy.step(action)
         updated_cat = env_easy.categories["Class A"]
         assert updated_cat.shape == Shape.SQUARE
         assert updated_cat.hex == initial_cat.hex
@@ -423,8 +428,8 @@ class TestCBAEnvironment:
             fix_type=FixType.RECOLOR,
             change_hex="#123456"
         )
-        obs, reward, done, info = env_easy.step(action)
+        obs = env_easy.step(action)
         # Check that the returned observation is consistent with internal state
         assert obs.hex_code_per_category["Class A"] == "#123456"
         assert obs.step_count == 1
-        assert obs.is_done == done
+        assert obs.is_done == env_easy.is_done
