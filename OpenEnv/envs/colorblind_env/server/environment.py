@@ -1,492 +1,373 @@
 """
 Color Blind Accessibility Environment
-
-# Methods to write
-DONE 1. __init__
-DONE 2. reset
-DONE 3. step
-DONE 4. _generate_categories
-DONE 5. _assign_broken_colors
-DONE 6. _render_scatter_plot
-DONE 7. _build_observation
-DONE 8. _compute_reward
-DONE 9. _check_done
 """
 
-from typing import Any
-
-from uuid import uuid4
-
-import numpy as np
 import random
-import matplotlib
+import numpy as np
 from itertools import combinations
-import copy
+from uuid import uuid4
 import base64
-from PIL import Image
 import io
-
-matplotlib.use('Agg')  # Use non-interactive backend — required for tostring_rgb / buffer_rgba
+from PIL import Image
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-# # Support both in-repo and standalone imports
-# try:
-#     # In-repo imports (when running from OpenEnv repository)
-#     from core.env_server.interfaces import Environment
-#     from core.env_server.types import State
-
-#     from ..models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
-#     from .config import *
-#     from .utils import compute_delta_e, rgb_to_hex
-
-# except ImportError:
-#     from models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
-#     from config import *
-#     from utils import compute_delta_e, rgb_to_hex
-
-#     try:
-#         # Standalone imports with the current openenv package namespace
-#         from openenv.core.env_server.interfaces import Environment
-#         from openenv.core.env_server.types import State
-#     except ImportError:
-#         # Backward-compatible standalone imports with the legacy namespace
-#         from openenv_core.env_server.interfaces import Environment
-#         from openenv_core.env_server.types import State
 
 from openenv.core.env_server import Environment
 
-try:
-    from ..models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
-    from .config import *
-    from .utils import compute_delta_e, rgb_to_hex
-except ImportError as e:
-    if "relative import" not in str(e) and "no known parent package" not in str(e):
-        raise
-    from models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
-    from server.config import *
-    from server.utils import compute_delta_e, rgb_to_hex
+from models import (
+    CBAAction, CBAObservation, CBAState,
+    Shape, Category, ColorBlindType, FixType
+)
+from .config import TASK_CONFIGS
+from .utils import compute_delta_e, rgb_to_hex
+
 
 class CBAEnvironment(Environment):
-    """
-    """
 
     def __init__(self, task="easy"):
         super().__init__()
 
-        """
-        Initialize the CBA Environment
-        """
-
-        assert task in ['easy', 'medium', 'hard'], "task value must be from ['easy', 'medium', 'hard']"
+        assert task in TASK_CONFIGS, "Invalid task"
 
         self.task = task
-        
-        self.task_config = TASK_CONFIGS[self.task]
-
-        self._state = None
+        self.config = TASK_CONFIGS[task]
 
         self.categories = None
         self.colorblind_types = None
-        self.current_image = None
         self.delta_E_matrix = {}
         self.steps_taken = 0
         self.is_done = False
         self.is_solved = False
         self.fixes_applied = []
-    
+        self._state = None
+
     @property
     def state(self):
         return self._state
+
+    def reset(self, **kwargs):
     
-    def _generate_categories(self):
-        """
-        It creates the initial category structure for the scatter plot.
-        Step 1 : Decide category names , simple names like "Class A", "Class B", etc
-        Step 2 : For each category, generate random points
-        Step 3 : Assign any color for now
-        Step 4 : Assign circle shape for now
-        Step 5 : Return a dict of category objects 
-
-        {
-            "Class A": Category(hex="#FF0000", shape=Shape.CIRCLE, points=[...]),
-            "Class B": Category(hex="#00FF00", shape=Shape.CIRCLE, points=[...]),
-        }
-        """
-        n_points = self.task_config['n_points']
-
-        categories = {}
-        for i in range(self.task_config['n_categories']):
-            label_name = "Class " + chr(65+i)
-
-            points_defined = [(random.random(), random.random()) for _ in range(n_points)]
-            color_defined = f"#FFFFFF"
-            shape_defined = Shape.CIRCLE
-
-            categories[label_name] = Category(hex=color_defined, shape=shape_defined, points=points_defined)
-        
-        return categories
-    
-    def _assign_broken_colors(self):
-        """
-        Deliberately assigns colors that are indistinguishable for the active CB types.
-        Uses LMS color space to generate confusion pairs.
-        """
-        l_shift = self.task_config['l_shift']
-        cb_types = self.colorblind_types
-        threshold = self.task_config['delta_E_threshold']
-        max_retries = 5000
- 
-        # LMS matrices
-        RGB_TO_LMS = np.array([
-            [0.3139902, 0.6395129, 0.0464975],
-            [0.1553728, 0.7578945, 0.0867014],
-            [0.0177523, 0.1094431, 0.8725692]
-        ])
-        LMS_TO_RGB = np.linalg.inv(RGB_TO_LMS)
- 
-        # CB type to cone index mapping
-        cb_cone_index = {
-            ColorBlindType.PROTANOPIA: 0,    # L cone missing
-            ColorBlindType.DEUTERANOPIA: 1,  # M cone missing
-            ColorBlindType.TRITANOPIA: 2,    # S cone missing
-        }
- 
-        category_names = list(self.categories.keys())
- 
-        # We need to assign a color to each category such that
-        # every pair is confusing for all active CB types
-        # Strategy: pick a base color, generate confusion partner,
-        # verify delta_E < threshold for all CB types
- 
-        # Assign first category a random base color
-        for attempt in range(max_retries):
-            print(f"Attempt {attempt}")  # add this
-            # Generate random base color
-            r = random.randint(30, 225)
-            g = random.randint(30, 225)
-            b = random.randint(30, 225)
-            base_hex = rgb_to_hex(r, g, b)
- 
-            # Generate confusion partner for each subsequent category
-            # using the first active CB type's cone
-            rgb_norm = np.array([r, g, b]) / 255.0
-            lms = RGB_TO_LMS @ rgb_norm
- 
-            valid_partners = [base_hex]
-            all_valid = True
- 
-            cone_idx = cb_cone_index[cb_types[0]]
- 
-            for i in range(1, len(category_names)):
-                # Shift by i * l_shift from the base so each partner is a
-                # distinct point on the same confusion line. Try both directions.
-                partner_hex = None
-                for sign in (1, -1):
-                    lms_partner = lms.copy()
-                    lms_partner[cone_idx] += sign * i * l_shift
-                    rgb_partner = LMS_TO_RGB @ lms_partner
- 
-                    if np.any((rgb_partner < 0) | (rgb_partner > 1)):
-                        continue  # out of gamut, try other sign
- 
-                    candidate = rgb_to_hex(*(rgb_partner * 255).astype(int))
- 
-                    # Verify delta_E < threshold for ALL active CB types vs base
-                    if all(compute_delta_e(base_hex, candidate, cb_type) < threshold
-                           for cb_type in cb_types):
-                        partner_hex = candidate
-                        break
- 
-                if partner_hex is None:
-                    all_valid = False
-                    break
- 
-                valid_partners.append(partner_hex)
- 
-            if all_valid and len(valid_partners) == len(category_names):
-                # Assign colors to categories
-                print(f"Found valid pair at attempt {attempt}")  # add this
-                for i, name in enumerate(category_names):
-                    self.categories[name] = self.categories[name].model_copy(
-                        update={"hex": valid_partners[i]}
-                    )
-                return
- 
-        raise ValueError(
-            f"Could not find valid broken color pairs after {max_retries} attempts. "
-            f"Try increasing max_retries or adjusting l_shift."
-        )
-
-    def _render_scatter_plot(self, ):   # return an image
-        # a 16x10 inch figure at matplotlib's default DPI (100) gives a 
-        # 1000x1600x3 image = 4.8 million integers being sent as JSON. 
-        # That's why the browser is struggling to display it.
-        
-        # fig = plt.figure(figsize=(16, 10))        # A heavy computation bug
-        fig = plt.figure(figsize=(8, 6), dpi=72)  # default is 100
-
-        for label_name, value_ in self.categories.items():
-            hex_code = value_.hex
-            shape_using = value_.shape.value
-            points = value_.points
-
-            points_np = np.array(points)
-
-            plt.scatter(points_np[:, 0], points_np[:, 1], marker=shape_using, color=hex_code, label=label_name)
-
-        plt.legend()
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.title("Color Blind Accessibility")
-        fig.canvas.draw()
-        # image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        # image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-        # plt.close(fig)
-
-        # tostring_rgb was removed in newer matplotlib; buffer_rgba works on the Agg backend
-        buf = fig.canvas.buffer_rgba()
-        image = np.frombuffer(buf, dtype=np.uint8).reshape(
-            fig.canvas.get_width_height()[::-1] + (4,)
-        )
-        image = image[:, :, :3]  # Drop alpha channel → keep RGB
- 
-        plt.close(fig)
-
-        return image
-    
-    def _build_observation(self) -> CBAObservation:
-        hex_code_per_category_observed = {}
-        shape_per_category_observed = {}
-
-        for label_name, value_ in self.categories.items():
-            hex_code_per_category_observed[label_name] = value_.hex
-            shape_per_category_observed[label_name] = value_.shape
-
-        # scatter_plot = base64.b64encode(self._state.scatter_plot.tobytes()).decode('utf-8')
-        return CBAObservation(
-            scatter_plot=self._state.scatter_plot,
-            scatter_plot_shape = self._state.scatter_plot_shape,  # read from state directly
-            hex_code_per_category=hex_code_per_category_observed,
-            shape_per_category=shape_per_category_observed,
-            colorblind_types=self._state.colorblind_types,
-            step_count=self._state.step_count,
-            max_steps=self._state.max_steps,
-            is_done=self.is_done
-        )
-    
-    def _encode_image(self, image: np.ndarray) -> str:
-        img = Image.fromarray(image)
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        img_b64 = base64.b64encode(buffer.getvalue())
-        return img_b64.decode('utf-8')
-
-
-    def reset(self) -> CBAObservation:
-        """
-        Reset the environment.
-
-        reset()
-        → generate categories        → stored in self.categories
-        → assign broken colors       → stored in self.categories
-        → render scatter plot        → stored in self.current_image
-        → build state                → stored in self.state (full truth)
-        → build observation          → derived from self.state
-        → return observation         → this is what agent receives
-
-        Returns:
-            CBAObservation with initial game state
-        """
         self.steps_taken = 0
         self.is_done = False
         self.is_solved = False
         self.fixes_applied = []
         self.delta_E_matrix = {}
 
-        all_cb_types = list(ColorBlindType)
-        self.colorblind_types = random.sample(all_cb_types, self.task_config["no_of_cb_types"])
+        import os, json
+        preset_data = None
+        if os.path.exists("/tmp/preset_layout.json"):
+            try:
+                with open("/tmp/preset_layout.json", "r") as f:
+                    preset_data = json.load(f)
+            except Exception:
+                pass
 
-        print("Starting reset...")
-        self.categories = self._generate_categories()
-        print("Categories generated")
-        self._assign_broken_colors()
-        print("Broken colors assigned")
+        if preset_data is not None:
+            # Rehydrate layout
+            layout = preset_data.get("categories", preset_data) # handle old/new format
+            self.categories = {k: Category(**v) for k, v in layout.items()}
+            
+            # Rehydrate colorblind types if present
+            if "colorblind_types" in preset_data:
+                self.colorblind_types = [ColorBlindType(t) for t in preset_data["colorblind_types"]]
+            else:
+                self.colorblind_types = random.sample(
+                    list(ColorBlindType),
+                    self.config["no_of_cb_types"]
+                )
+        else:
+            self.colorblind_types = random.sample(
+                list(ColorBlindType),
+                self.config["no_of_cb_types"]
+            )
+            self.categories = self._generate_categories()
+            self._assign_broken_colors()
+            
         self._compute_delta_e_matrix()
-        print("Delta E matrix computed")
 
-        self.current_image = self._render_scatter_plot()
-        print("Scatter plot rendered")
-
-        scatter_plot_b64 = self._encode_image(self.current_image)
+        image = self._render()
 
         self._state = CBAState(
-            episode_id = str(uuid4()), 
-            step_count=0, 
-            scatter_plot = scatter_plot_b64, 
-            scatter_plot_shape = list(self.current_image.shape),
+            episode_id=str(uuid4()),
+            step_count=0,
+            scatter_plot=image,
+            scatter_plot_shape=self.image_shape,
             categories=self.categories,
-            colorblind_types = self.colorblind_types, 
-            max_steps=self.task_config['max_steps'],
-            fixes_applied = self.fixes_applied,
-            delta_E_matrix = self.delta_E_matrix,
-            is_solved = self.is_solved
+            colorblind_types=self.colorblind_types,
+            max_steps=self.config["max_steps"],
+            fixes_applied=self.fixes_applied,
+            delta_E_matrix=self.delta_E_matrix,
+            is_solved=self.is_solved,
         )
-        
+
         return self._build_observation()
 
-    def _compute_delta_e_matrix(self):  # returns nothing
-        pairs = list(combinations(self.categories.keys(), 2))   # pairs = [("Class A", "Class B"), ("Class A", "Class C"), ...]
+    # -----------------------------
+    # STEP
+    # -----------------------------
+    def step(self, action: CBAAction):
 
-        for cat_i, cat_j in pairs:
-            for_each_cb_delta_value = {}
-            hex_i, hex_j = self.categories[cat_i].hex, self.categories[cat_j].hex
-
-            for cb_type in self.colorblind_types:
-                delta = compute_delta_e(hex_i, hex_j, cb_type)
-                for_each_cb_delta_value[cb_type.value] = delta
-
-            # self.delta_E_matrix[(cat_i, cat_j)] = for_each_cb_delta_value
-            self.delta_E_matrix[f"{cat_i}|{cat_j}"] = for_each_cb_delta_value
-    
-    def _check_done(self):
-        is_solved_lst = []
-
-        if not self.delta_E_matrix:
-            self.is_solved = False
-            self.is_done = False
-            return
-        
-        for pair in self.delta_E_matrix:
-            for value in self.delta_E_matrix[pair].values():
-                if value < self.task_config['delta_E_threshold']:
-                    is_solved_lst.append(False)
-                else:
-                    is_solved_lst.append(True)
-        
-        self.is_solved = all(is_solved_lst)
-        
-        if self.task == "easy":
-            self.is_done = self.is_solved
-        else:
-            self.is_done = self.is_solved or self.steps_taken >= self.task_config['max_steps']
-            
-    def _compute_reward(self, action, previous_delta_E_matrix):
-
-        total_score = 0
-        color_weight = self.task_config['color_weight']
-        shape_weight = self.task_config['shape_weight']
-        core_reward = 0
-        penalty = 0
-        bonus = 0
-
-        for pair in self.delta_E_matrix:
-            shape_score, color_score = 0, 0
-            cat_i, cat_j = pair.split("|")
-            
-            shape_i, shape_j = self.categories[cat_i].shape, self.categories[cat_j].shape
-            if shape_i != shape_j:
-                shape_score = 1
-            
-            for value in self.delta_E_matrix[pair].values():
-                color_score += value
-            
-            avg_color_score = color_score / len(self.colorblind_types)
-            norm_color_score = min(avg_color_score / 40.0, 1.0)
-
-            pair_reward = color_weight * norm_color_score + shape_weight * shape_score 
-
-            total_score += pair_reward
-
-        core_reward = total_score / len(self.delta_E_matrix)    
-
-        if self.task == "hard" and core_reward >= 0.8:
-            bonus = (1 - self.steps_taken / self.task_config['max_steps']) * self.task_config['efficiency_weight']
-        if self.task == "medium" and self.steps_taken > self.task_config['max_steps']:
-            steps_over = self.steps_taken - self.task_config['max_steps']
-            penalty -= 0.02 * steps_over
-
-        ## Redundant Action Penalty ##
-        previous_core = 0
-        already_solved = False
-        if previous_delta_E_matrix is not None:
-            target = action.target
-            threshold = self.task_config['delta_E_threshold']
-
-            # find all pairs involving the target category
-            target_pairs = [pair for pair in previous_delta_E_matrix if target in pair]
-
-            # check if ALL those pairs were already well distinguished
-            already_solved = all(
-                delta >= threshold
-                for pair in target_pairs
-                for delta in previous_delta_E_matrix[pair].values()
-            )
-
-            previous_total = 0
-            for pair in previous_delta_E_matrix:
-                prev_color_score = sum(previous_delta_E_matrix[pair].values()) / len(self.colorblind_types)
-                prev_norm = min(prev_color_score / 40.0, 1.0)
-                previous_total += prev_norm
-            previous_core = previous_total / len(previous_delta_E_matrix)
-
-        if already_solved:
-            penalty -= 0.05
-
-        if core_reward < previous_core:
-            penalty -= 0.1 * (previous_core - core_reward)
-
-        ### Final Score ###
-        total_reward = core_reward + bonus + penalty
-        return max(0.0, min(1.0, total_reward))
-
-    def step(self, action:CBAAction):
-
-        if self.is_done :
-            raise RuntimeError("Episode is already done. Call reset() to start a new episode.")
+        if self.is_done:
+            raise RuntimeError("Episode finished. Call reset().")
 
         if action.target not in self.categories:
-            raise ValueError(f"Target category '{action.target}' does not exist")
+            raise ValueError("Invalid category")
 
-        previous_delta_E_matrix = copy.deepcopy(self.delta_E_matrix) if self.delta_E_matrix else None
-        fix_str = ""
+        prev_matrix = self.delta_E_matrix.copy()
 
+        # Apply action
         if action.fix_type == FixType.RECOLOR:
             self.categories[action.target] = self.categories[action.target].model_copy(
-                                                update={"hex": action.change_hex}
-                                            )
-
-            fix_str = f"{action.fix_type} {action.target} → {action.change_hex}"
+                update={"hex": action.change_hex}
+            )
         else:
             self.categories[action.target] = self.categories[action.target].model_copy(
-                                                update={"shape": action.change_shape}
-                                            )
-            fix_str = f"{action.fix_type} {action.target} → {action.change_shape}"
+                update={"shape": action.change_shape}
+            )
 
         self.steps_taken += 1
 
-        self.current_image = self._render_scatter_plot()
+        # Recompute only affected pairs
+        self._update_delta_e_for_target(action.target)
 
-        self._compute_delta_e_matrix()
-
-        reward = self._compute_reward(action, previous_delta_E_matrix)
+        reward = self._compute_reward(action, prev_matrix)
 
         self._check_done()
 
-        self.fixes_applied.append(fix_str)
+        if self.config["render"]:
+            image = self._render()
+            self._state.scatter_plot = image
+            self._state.scatter_plot_shape = self.image_shape
 
+        self.fixes_applied.append(str(action))
+
+        # Update state
         self._state.step_count = self.steps_taken
-        # self._state.scatter_plot = self.current_image
-        self._state.scatter_plot = self._encode_image(self.current_image)
-        self._state.scatter_plot_shape = list(self.current_image.shape)
         self._state.categories = self.categories
-        self._state.fixes_applied = self.fixes_applied
         self._state.delta_E_matrix = self.delta_E_matrix
         self._state.is_solved = self.is_solved
 
-        observation = self._build_observation()
-        observation.reward = reward
-        observation.done = self.is_done
-        
-        # return self._build_observation(), reward, self.is_done, {}
-        return observation
+        obs = self._build_observation()
+        obs.reward = reward
+
+        return obs
+
+    # -----------------------------
+    # CATEGORY GENERATION
+    # -----------------------------
+    def _generate_categories(self):
+
+        categories = {}
+
+        for i in range(self.config["n_categories"]):
+            name = f"Class {chr(65+i)}"
+
+            points = [
+                (random.random(), random.random())
+                for _ in range(self.config["n_points"])
+            ]
+
+            categories[name] = Category(
+                hex="#FFFFFF",
+                shape=Shape.CIRCLE,
+                points=points
+            )
+
+        return categories
+
+    # -----------------------------
+    # BROKEN COLORS
+    # -----------------------------
+    def _assign_broken_colors(self):
+
+        category_names = list(self.categories.keys())
+        threshold = self.config["delta_E_threshold"]
+
+        while True:
+            base = tuple(random.randint(30, 220) for _ in range(3))
+            base_hex = rgb_to_hex(*base)
+
+            colors = [base_hex]
+
+            for _ in range(len(category_names) - 1):
+                candidate = rgb_to_hex(
+                    *(random.randint(30, 220) for _ in range(3))
+                )
+
+                valid = all(
+                    compute_delta_e(base_hex, candidate, cb) < threshold
+                    for cb in self.colorblind_types
+                )
+
+                if not valid:
+                    break
+
+                colors.append(candidate)
+
+            if len(colors) == len(category_names):
+                for i, name in enumerate(category_names):
+                    self.categories[name] = self.categories[name].model_copy(
+                        update={"hex": colors[i]}
+                    )
+                return
+
+    # -----------------------------
+    # DELTA E MATRIX
+    # -----------------------------
+    def _compute_delta_e_matrix(self):
+
+        self.delta_E_matrix = {}
+
+        for i, j in combinations(self.categories.keys(), 2):
+            self.delta_E_matrix[(i, j)] = {
+                cb: compute_delta_e(
+                    self.categories[i].hex,
+                    self.categories[j].hex,
+                    cb
+                )
+                for cb in self.colorblind_types
+            }
+
+    def _update_delta_e_for_target(self, target):
+
+        for key in list(self.delta_E_matrix.keys()):
+            if target in key:
+                del self.delta_E_matrix[key]
+
+        for other in self.categories:
+            if other == target:
+                continue
+
+            pair = tuple(sorted([target, other]))
+
+            self.delta_E_matrix[pair] = {
+                cb: compute_delta_e(
+                    self.categories[pair[0]].hex,
+                    self.categories[pair[1]].hex,
+                    cb
+                )
+                for cb in self.colorblind_types
+            }
+
+    # -----------------------------
+    # REWARD
+    # -----------------------------
+    def _compute_reward(self, action=None, prev_matrix=None):
+
+        total_score = 0.0
+        pair_count = 0
+
+        categories = list(self.categories.keys())
+        n = len(categories)
+
+        if n < 2:
+            return 0.0
+
+        for i in range(n):
+            for j in range(i + 1, n):
+
+                cat1 = categories[i]
+                cat2 = categories[j]
+
+                hex1 = self.categories[cat1].hex
+                hex2 = self.categories[cat2].hex
+
+                shape1 = self.categories[cat1].shape
+                shape2 = self.categories[cat2].shape
+
+                # COLOR
+                color_score = 0.0
+                for cb_type in self.colorblind_types:
+                    delta = compute_delta_e(hex1, hex2, cb_type)
+
+                    norm_delta = delta / (self.config["delta_E_threshold"] + 1e-8)
+                    norm_delta = max(0.0, min(1.0, norm_delta))
+
+                    color_score += norm_delta
+
+                color_score /= len(self.colorblind_types)
+
+                # SHAPE
+                shape_score = 1.0 if shape1 != shape2 else 0.0
+
+                # 🔥 NORMALIZED COMBINATION
+                total_weight = self.config["color_weight"] + self.config["shape_weight"] + 1e-8
+
+                pair_score = (
+                    (self.config["color_weight"] * color_score +
+                    self.config["shape_weight"] * shape_score)
+                    / total_weight
+                )
+
+                total_score += pair_score
+                pair_count += 1
+
+        # TRUE AVERAGE
+        reward = total_score / pair_count if pair_count > 0 else 0.0
+
+        # FINAL CLAMP
+        reward = max(0.0, min(1.0, reward))
+
+        return reward
+    # -----------------------------
+    # DONE CHECK
+    # -----------------------------
+    def _check_done(self):
+
+        threshold = self.config["delta_E_threshold"]
+
+        self.is_solved = all(
+            v >= threshold
+            for pair in self.delta_E_matrix.values()
+            for v in pair.values()
+        )
+
+        self.is_done = self.is_solved or self.steps_taken >= self.config["max_steps"]
+
+    # -----------------------------
+    # RENDER
+    # -----------------------------
+    def _render(self):
+
+        fig = plt.figure(figsize=(6, 4), dpi=72)
+
+        for name, cat in self.categories.items():
+            pts = np.array(cat.points)
+            plt.scatter(pts[:, 0], pts[:, 1], color=cat.hex, marker=cat.shape.value)
+
+        plt.title("CBA")
+        fig.canvas.draw()
+
+        buf = fig.canvas.buffer_rgba()
+        image = np.frombuffer(buf, dtype=np.uint8).reshape(
+            fig.canvas.get_width_height()[::-1] + (4,)
+        )[:, :, :3]
+
+        plt.close(fig)
+
+        self.image_shape = list(image.shape)
+
+        return self._encode(image)
+
+    def _encode(self, image):
+        img = Image.fromarray(image)
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode()
+
+    # -----------------------------
+    # OBSERVATION
+    # -----------------------------
+    def _build_observation(self):
+
+        return CBAObservation(
+            scatter_plot=self._state.scatter_plot,
+            scatter_plot_shape=self._state.scatter_plot_shape,
+            hex_code_per_category={k: v.hex for k, v in self.categories.items()},
+            shape_per_category={k: v.shape for k, v in self.categories.items()},
+            colorblind_types=self.colorblind_types,
+            step_count=self.steps_taken,
+            max_steps=self.config["max_steps"],
+            is_done=self.is_done,
+        )

@@ -1,48 +1,90 @@
 """
-FastAPI application for the Color Blind Accessibility Environment.
-
-This module creates an HTTP server that exposes CBA Environment
-over HTTP and WebSocket endpoints, compatible with EnvClient.
-
-Usage:
-    # Development (with auto-reload):
-    uvicorn envs.atari_env.server.app:app --reload --host 0.0.0.0 --port 8000
-
-    # Production:
-    uvicorn envs.atari_env.server.app:app --host 0.0.0.0 --port 8000 --workers 4
-
-    # Or run directly:
-    python -m envs.atari_env.server.app
+FastAPI application for the Color Blind Accessibility Environment
 """
 
 import os
+import logging
+from fastapi.middleware.cors import CORSMiddleware
+
 from openenv.core.env_server import create_app
 
-# Support both in-repo and standalone imports
-try:
-    # In-repo imports (when running from OpenEnv repository)
-    from ..models import CBAAction, CBAObservation
-    from .environment import CBAEnvironment
-except ImportError as e:
-    if "relative import" not in str(e) and "no known parent package" not in str(e):
-        raise
-    # Standalone imports (when running via uvicorn server.app:app)
-    from models import CBAAction, CBAObservation
-    from server.environment import CBAEnvironment
+from models import CBAAction, CBAObservation
+from .environment import CBAEnvironment
 
-# Get configuration from environment variables
+
+# ---------------------------------
+# LOGGING
+# ---------------------------------
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------
+# CONFIG
+# ---------------------------------
+
+VALID_TASKS = ["easy", "medium", "hard"]
+
 task = os.getenv("CBA_TASK", "easy")
+if task not in VALID_TASKS:
+    raise ValueError(f"Invalid task '{task}'. Must be one of {VALID_TASKS}")
+
+PORT = int(os.getenv("PORT", 8000))
+
+logger.info(f"Starting CBA Environment with task={task}")
+
+
+# ---------------------------------
+# ENV FACTORY
+# ---------------------------------
 
 def create_cba_environment():
     return CBAEnvironment(task=task)
 
+
+# ---------------------------------
+# APP CREATION
+# ---------------------------------
+
 app = create_app(
-    create_cba_environment, CBAAction, CBAObservation, env_name="cba_env"
+    create_cba_environment,
+    CBAAction,
+    CBAObservation,
+    env_name="cba_env_v1"
 )
+
+
+# ---------------------------------
+# CORS (for frontend / demos)
+# ---------------------------------
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------
+# HEALTH CHECK
+# ---------------------------------
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "env": "cba_env", "task": task}
+
+
+# ---------------------------------
+# MAIN (LOCAL RUN)
+# ---------------------------------
 
 def main():
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
+
 
 if __name__ == "__main__":
     main()

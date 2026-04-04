@@ -1,0 +1,45 @@
+name: cba
+
+channels:
+  - defaults
+  - conda-forge
+
+dependencies:
+  # -------------------------
+  # Core
+  # -------------------------
+  - python=3.11
+  - pip
+
+  # -------------------------
+  # Scientific stack
+  # -------------------------
+  - numpy
+  - scipy
+  - matplotlib
+  - pillow
+
+  # -------------------------
+  # Web / API
+  # -------------------------
+  - fastapi
+  - uvicorn
+
+  # -------------------------
+  # Pip dependencies
+  # -------------------------
+  - pip:
+      # Core project
+      - pydantic>=2.0
+      - colorspacious>=1.1.2
+      - scikit-image>=0.22
+      - websockets>=11.0
+      - openenv-core
+
+      # RL
+      - gymnasium
+      - stable-baselines3
+      - torch
+
+      # Optional utils
+      - tqdm
