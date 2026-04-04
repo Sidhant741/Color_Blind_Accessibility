@@ -8,7 +8,7 @@ TASK_CONFIGS = {
     # EASY
     # ---------------------------------
     "easy": {
-        "n_categories": 2,
+        "n_categories": 3,
         "no_of_cb_types": 1,
         "max_steps": 10,
         "n_points": 50,

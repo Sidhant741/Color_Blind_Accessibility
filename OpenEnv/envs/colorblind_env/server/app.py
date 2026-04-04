@@ -51,7 +51,8 @@ app = create_app(
     create_cba_environment,
     CBAAction,
     CBAObservation,
-    env_name="cba_env_v1"
+    env_name="cba_env_v1",
+    max_concurrent_envs=10
 )
 
 

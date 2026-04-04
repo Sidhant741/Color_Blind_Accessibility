@@ -1,108 +1,91 @@
-"""
-Utility functions for Color Blind Accessibility Environment
-"""
-
-from functools import lru_cache
-from typing import Tuple
-
 from colorspacious import cspace_convert
 from skimage.color import deltaE_ciede2000
 
+# Takes a color value (using hex code) and return a color value (hex code)
+# for the particular Color Blind Person.
+def simulate_cb(hex_code, cb_type, severity=100):
+    '''
+    Takes 
+    hex_code : "#FF0000",
+    cb_type : "protanopia",
+    severity : 100
 
-# ---------------------------------
-# BASIC CONVERSIONS
-# ---------------------------------
+    Return a Hex code of the color that the Color blind person will see
 
-def hex_to_rgb(hex_code: str) -> Tuple[int, int, int]:
-    hex_code = hex_code.lstrip('#')
-    return tuple(int(hex_code[i:i+2], 16) for i in (0, 2, 4))
+    Note : By default the colorspacious, use the anamoly convention rather than opia, so 
+    to simulate *opia, we have to use the severity value, which for now I have set it to 100.
+    '''
 
-
-def rgb_to_hex(r: int, g: int, b: int) -> str:
-    return "#{:02X}{:02X}{:02X}".format(r, g, b)
-
-
-def rgb_to_lab(r: int, g: int, b: int):
-    rgb_norm = [r / 255.0, g / 255.0, b / 255.0]
-    return cspace_convert(rgb_norm, "sRGB1", "CIELab")
-
-
-# ---------------------------------
-# COLOR BLIND SIMULATION (FAST)
-# ---------------------------------
-
-def simulate_cb_rgb(rgb: Tuple[int, int, int], cb_type, severity: int = 100) -> Tuple[int, int, int]:
-    """
-    Simulate how a color is perceived by a color-blind user.
-
-    Args:
-        rgb: (R, G, B) in [0,255]
-        cb_type: Enum or str
-        severity: 100 → full color blindness
-
-    Returns:
-        Simulated RGB in [0,255]
-    """
-
-    cb_type_str = cb_type.value if hasattr(cb_type, "value") else cb_type
-
-    opia_to_anomaly = {
+    opia_to_anomaly_convert = {
         "protanopia": "protanomaly",
         "deuteranopia": "deuteranomaly",
         "tritanopia": "tritanomaly",
     }
 
+    cb_type_str = cb_type.value if hasattr(cb_type, 'value') else cb_type
+
     cvd_space = {
-        "name": "sRGB1+CVD",
-        "cvd_type": opia_to_anomaly[cb_type_str],
+        "name" : "sRGB1+CVD",
+        "cvd_type": opia_to_anomaly_convert[cb_type_str],
         "severity": severity,
     }
 
-    # Normalize
-    r, g, b = rgb
-    rgb_norm = [r / 255.0, g / 255.0, b / 255.0]
+    r, g, b = hex_to_rgb(hex_code)
 
-    # Simulate (From normal to CVD perception)
-    simulated = cspace_convert(rgb_norm, cvd_space, "sRGB1")
+    rgb_norm = [r / 255, g / 255, b / 255]
 
-    # Clip (IMPORTANT)
-    simulated = [max(0, min(1, c)) for c in simulated]
+    # simulate color blindness
+    simulated = cspace_convert(rgb_norm, "sRGB1", cvd_space)
 
-    # Convert back to [0,255]
-    return tuple(int(c * 255) for c in simulated)
+    # convert back to 0-255
+    simulated_255 = [int(max(0, min(1, c)) * 255) for c in simulated]
 
+    simulated_hexcode = rgb_to_hex(*simulated_255)
 
-# ---------------------------------
-# DELTA E COMPUTATION (OPTIMIZED)
-# ---------------------------------
+    return simulated_hexcode
 
-@lru_cache(maxsize=10000)
-def compute_delta_e(hex1: str, hex2: str, cb_type) -> float:
-    """
-    Compute perceptual difference (CIEDE2000) under color blindness.
-    Cached for performance.
-    """
+# 
+def compute_delta_e(hex1, hex2, cb_type):
+    simulated_hex1 = simulate_cb(hex1, cb_type)
+    simulated_hex2 = simulate_cb(hex2, cb_type)
 
-    rgb1 = hex_to_rgb(hex1)
-    rgb2 = hex_to_rgb(hex2)
+    simulated_rgb1 = hex_to_rgb(simulated_hex1)
+    simulated_rgb2 = hex_to_rgb(simulated_hex2)
 
-    sim1 = simulate_cb_rgb(rgb1, cb_type)
-    sim2 = simulate_cb_rgb(rgb2, cb_type)
+    simulated_lab1 = rgb_to_lab(*simulated_rgb1)
+    simulated_lab2 = rgb_to_lab(*simulated_rgb2)
 
-    lab1 = rgb_to_lab(*sim1)
-    lab2 = rgb_to_lab(*sim2)
+    color_dist = deltaE_ciede2000(simulated_lab1, simulated_lab2)
 
-    return float(deltaE_ciede2000(lab1, lab2))
+    return color_dist
 
+# Hex Value to RGB Value
+def hex_to_rgb(hex_code):
+    hex_code = hex_code.lstrip('#')  # remove '#'
+    return tuple(int(hex_code[i:i+2], 16) for i in (0, 2, 4))
 
-# ---------------------------------
-# OPTIONAL: HEX WRAPPER (DEBUG)
-# ---------------------------------
+# RGB value to HEX Value
+def rgb_to_hex(r, g, b):
+    return "#{:02X}{:02X}{:02X}".format(r, g, b)
 
-def simulate_cb_hex(hex_code: str, cb_type) -> str:
-    """
-    Convenience wrapper (not used in training).
-    """
-    rgb = hex_to_rgb(hex_code)
-    sim_rgb = simulate_cb_rgb(rgb, cb_type)
-    return rgb_to_hex(*sim_rgb)
+# RGB value to LAB value
+def rgb_to_lab(r, g, b):
+    r_norm = r / 255
+    g_norm = g / 255
+    b_norm = b / 255
+    
+    rgb_norm = [r_norm, g_norm, b_norm]
+
+    lab = cspace_convert(rgb_norm, "sRGB1", "CIELab")
+
+    return lab
+
+# LAB value to RGB
+def lab_to_rgb(lab):
+    rgb_back = cspace_convert(lab, "CIELab", "sRGB1")
+
+    # scale back to [0,255]
+    # rgb_back = [int(x * 255) for x in rgb_back]
+    rgb_back = [int(max(0, min(1, x)) * 255) for x in rgb_back]
+
+    return rgb_back
