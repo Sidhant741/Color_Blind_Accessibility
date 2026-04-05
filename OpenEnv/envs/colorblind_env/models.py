@@ -84,10 +84,24 @@ class FixType(str, Enum):
 
 # Action (agent's decision)    
 class CBAAction(Action):
-    target: str
-    fix_type: FixType
-    change_hex: Optional[str] = None
-    change_shape: Optional[Shape] = None
+    #target: str
+    #fix_type: FixType
+    #change_hex: Optional[str] = None
+    #change_shape: Optional[Shape] = None
+    target: str = Field(
+        json_schema_extra={"placeholder": "Class A, Class B"}
+    )
+    fix_type: FixType = Field(
+        json_schema_extra={"placeholder": "Recolor or Reshape"}
+    )
+    change_hex: Optional[str] = Field(
+        default=None, 
+        json_schema_extra={"placeholder": "e.g. #FF0000"}
+    )
+    change_shape: Optional[Shape] = Field(
+        default=None, 
+        json_schema_extra={"placeholder": "O, X, ^, +, s, p, *"}
+    )
 
     @field_validator('change_hex')
     @classmethod

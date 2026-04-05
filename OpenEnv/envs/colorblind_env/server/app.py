@@ -17,7 +17,21 @@ Usage:
 
 import os
 from openenv.core.env_server import create_app
+import openenv.core.env_server.web_interface as web_interface
 
+def custom_generate_placeholder(field_name: str, field_info: dict) -> str:
+    name = field_name.lower()
+    if "target" in name:
+        return "Class A, Class B"
+    elif "fix_type" in name:
+        return "Recolor or Reshape"
+    elif "change_hex" in name:
+        return "e.g. #FF0000"
+    elif "change_shape" in name:
+        return "O, X, ^, +, s, p, *"
+    return f"Enter {field_name.replace('_', ' ')}..."
+
+web_interface._generate_placeholder = custom_generate_placeholder
 # Support both in-repo and standalone imports
 try:
     # In-repo imports (when running from OpenEnv repository)
