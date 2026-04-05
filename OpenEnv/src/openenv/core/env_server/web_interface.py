@@ -614,13 +614,13 @@ def _determine_input_type_from_schema(
 
 def _generate_placeholder(field_name: str, field_info: Dict[str, Any]) -> str:
     """Generate placeholder text."""
-    if "Target" in field_name:
+    if "target" in field_name:
         return "Class A, Class B"
-    elif "Fix Type" in field_name:
+    elif "fix_type" in field_name:
         return "Recolor or Reshape"
-    elif "Change Hex" in field_name:
+    elif "change_hex" in field_name:
         return "e.g. #FF0000"
-    elif "Change Shape" in field_name:
+    elif "change_shape" in field_name:
         return "O, X, ^, +, s, p, *"
     if "message" in field_name.lower():
         return f"Enter {field_name.replace('_', ' ')}..."
