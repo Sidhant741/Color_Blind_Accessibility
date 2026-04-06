@@ -263,11 +263,13 @@ app = create_app(
     max_concurrent_envs=10,
 )
 
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI
 
-"""@app.get("/")
-def redirect_to_web():
-    return RedirectResponse(url="/web")"""
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"status": "ok"}
 
 def main():
     import uvicorn
