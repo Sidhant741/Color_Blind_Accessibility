@@ -23,6 +23,8 @@ import gradio as gr
 
 from .types import EnvironmentMetadata
 
+print(">>> LOADING LOCAL GRADIO_UI <<<")
+
 
 def _escape_md(text: str) -> str:
     """Escape Markdown special characters in user-controlled content."""
@@ -103,9 +105,11 @@ def build_gradio_app(
                 if isinstance(b64_data, str) and b64_data.startswith("data:image"):
                     b64_data = b64_data.split(",", 1)[1]
                 img_data = base64.b64decode(b64_data)
-                img = Image.open(io.BytesIO(img_data))
-                img.load()  # Force loading data before BytesIO closes
-                return img
+                
+                # Return numpy array instead of PIL to avoid any lazy loading or unclosed stream bugs in Gradio
+                import numpy as np
+                img = Image.open(io.BytesIO(img_data)).convert("RGB")
+                return np.array(img)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -183,7 +187,7 @@ def build_gradio_app(
                     gr.Markdown(readme_content)
 
             with gr.Column(scale=2, elem_classes="col-right"):
-                img_display = gr.Image(label="Scatter Plot", type="pil", interactive=False)
+                img_display = gr.Image(label="Scatter Plot", type="numpy", interactive=False)
                 obs_display = gr.Markdown(
                     value=("# Playground\n\nClick **Reset** to start a new episode."),
                 )
