@@ -16,6 +16,14 @@ Usage:
 """
 
 import os
+import sys
+from pathlib import Path
+
+repo_root = Path(__file__).resolve().parent.parent.parent.parent
+src_dir = str(repo_root / "src")
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
 from openenv.core.env_server import create_app
 import openenv.core.env_server.web_interface as web_interface
 
