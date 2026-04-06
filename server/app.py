@@ -108,7 +108,7 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
                         visible=False
                     )
                     
-                    gr.Separator()
+                    gr.HTML("<hr>")
                     
                     inputs_dict = {}
                     for field in action_fields:
