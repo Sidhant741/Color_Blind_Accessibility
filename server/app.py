@@ -92,19 +92,19 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
                     )
                     
                     cb_type_easy = gr.Dropdown(
-                        choices=["deuteranopia", "protanopia", "tritanopia"],
+                        choices=["deutronopia", "protanopia", "titanopia"],
                         label="Type of Colorblind",
-                        value="deuteranopia",
+                        value="deutronopia",
                         visible=True
                     )
                     cb_type_medium = gr.Dropdown(
                         choices=[
-                            "deuteranopia and protanopia", 
-                            "deuteranopia and tritanopia", 
+                            "deutronopia and protanopia", 
+                            "deutronopia and titanopia", 
                             "protanopia and tritanopia"
                         ],
                         label="Type of Colorblind",
-                        value="deuteranopia and protanopia",
+                        value="deutronopia and protanopia",
                         visible=False
                     )
                     
@@ -212,11 +212,19 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
             return json.dumps(c, indent=2)
 
         async def do_reset(mode, cb_easy, cb_medium):
+            cb_mapping = {
+                "deutronopia": "deuteranopia",
+                "protanopia": "protanopia",
+                "titanopia": "tritanopia",
+                "tritanopia": "tritanopia"
+            }
+            
             cb_types = None
             if mode == "easy":
-                cb_types = [cb_easy]
+                cb_types = [cb_mapping.get(cb_easy, cb_easy)]
             elif mode == "medium":
-                cb_types = cb_medium.split(" and ")
+                parts = cb_medium.split(" and ")
+                cb_types = [cb_mapping.get(p.strip(), p.strip()) for p in parts]
             
             try:
                 data = await web_manager.reset_environment(task=mode, cb_types=cb_types)
