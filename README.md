@@ -2,7 +2,7 @@
 title: colorblind_env
 sdk: docker
 app_port: 7860
-base_path: /web
+#base_path: /web
 tags:
   - openenv
 ---

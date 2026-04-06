@@ -265,9 +265,9 @@ app = create_app(
 
 from fastapi.responses import RedirectResponse
 
-@app.get("/")
+"""@app.get("/")
 def redirect_to_web():
-    return RedirectResponse(url="/web")
+    return RedirectResponse(url="/web")"""
 
 def main():
     import uvicorn
