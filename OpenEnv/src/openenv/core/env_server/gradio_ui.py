@@ -12,7 +12,9 @@ Mount at /web via gr.mount_gradio_app() from create_web_interface_app().
 """
 
 from __future__ import annotations
-
+import base64
+import io
+from PIL import Image
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -20,6 +22,8 @@ from typing import Any, Dict, List, Optional
 import gradio as gr
 
 from .types import EnvironmentMetadata
+
+print(">>> LOADING LOCAL GRADIO_UI <<<")
 
 
 def _escape_md(text: str) -> str:
@@ -93,43 +97,83 @@ def build_gradio_app(
     readme_content = _readme_section(metadata)
     display_title = get_gradio_display_title(metadata, fallback=title)
 
+    def get_img(data):
+        try:
+            obs = data.get("observation", {})
+            if "scatter_plot" in obs and obs["scatter_plot"]:
+                b64_data = obs["scatter_plot"]
+                if isinstance(b64_data, str) and b64_data.startswith("data:image"):
+                    b64_data = b64_data.split(",", 1)[1]
+                img_data = base64.b64decode(b64_data)
+                
+                # Return numpy array instead of PIL to avoid any lazy loading or unclosed stream bugs in Gradio
+                import numpy as np
+                img = Image.open(io.BytesIO(img_data)).convert("RGB")
+                return np.array(img)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+        return None
+
     async def reset_env():
         try:
             data = await web_manager.reset_environment()
             obs_md = _format_observation(data)
+            
+            # Remove giant base64 string from JSON display
+            import copy
+            data_clean = copy.deepcopy(data)
+            if "scatter_plot" in data_clean.get("observation", {}):
+                data_clean["observation"]["scatter_plot"] = "<base64 encoded image>"
+                
             return (
+                get_img(data),
                 obs_md,
-                json.dumps(data, indent=2),
+                json.dumps(data_clean, indent=2),
                 "Environment reset successfully.",
             )
         except Exception as e:
-            return ("", "", f"Error: {e}")
+            return (None, "", "", f"Error: {e}")
 
     def _step_with_action(action_data: Dict[str, Any]):
         async def _run():
             try:
                 data = await web_manager.step_environment(action_data)
                 obs_md = _format_observation(data)
+
+                # Remove giant base64 string from JSON display
+                import copy
+                data_clean = copy.deepcopy(data)
+                if "scatter_plot" in data_clean.get("observation", {}):
+                    data_clean["observation"]["scatter_plot"] = "<base64 encoded image>"
+
                 return (
+                    get_img(data),
                     obs_md,
-                    json.dumps(data, indent=2),
+                    json.dumps(data_clean, indent=2),
                     "Step complete.",
                 )
             except Exception as e:
-                return ("", "", f"Error: {e}")
+                return (None, "", "", f"Error: {e}")
 
         return _run
 
     async def step_chat(message: str):
         if not (message or str(message).strip()):
-            return ("", "", "Please enter an action message.")
+            return (None, "", "", "Please enter an action message.")
         action = {"message": str(message).strip()}
         return await _step_with_action(action)()
 
     def get_state_sync():
         try:
             data = web_manager.get_state()
-            return json.dumps(data, indent=2)
+            
+            import copy
+            data_clean = copy.deepcopy(data)
+            if "scatter_plot" in data_clean:
+                data_clean["scatter_plot"] = "<base64 encoded image>"
+                
+            return json.dumps(data_clean, indent=2)
         except Exception as e:
             return f"Error: {e}"
 
@@ -143,6 +187,7 @@ def build_gradio_app(
                     gr.Markdown(readme_content)
 
             with gr.Column(scale=2, elem_classes="col-right"):
+                img_display = gr.Image(label="Scatter Plot", type="numpy", interactive=False)
                 obs_display = gr.Markdown(
                     value=("# Playground\n\nClick **Reset** to start a new episode."),
                 )
@@ -219,18 +264,18 @@ def build_gradio_app(
 
         reset_btn.click(
             fn=reset_env,
-            outputs=[obs_display, raw_json, status],
+            outputs=[img_display, obs_display, raw_json, status],
         )
         step_btn.click(
             fn=step_fn,
             inputs=step_inputs,
-            outputs=[obs_display, raw_json, status],
+            outputs=[img_display, obs_display, raw_json, status],
         )
         if is_chat_env:
             action_input.submit(
                 fn=step_fn,
                 inputs=step_inputs,
-                outputs=[obs_display, raw_json, status],
+                outputs=[img_display, obs_display, raw_json, status],
             )
         state_btn.click(
             fn=get_state_sync,
