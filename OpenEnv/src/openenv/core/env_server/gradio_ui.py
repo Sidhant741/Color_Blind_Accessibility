@@ -99,20 +99,33 @@ def build_gradio_app(
         try:
             obs = data.get("observation", {})
             if "scatter_plot" in obs and obs["scatter_plot"]:
-                img_data = base64.b64decode(obs["scatter_plot"])
-                return Image.open(io.BytesIO(img_data))
-        except Exception:
-            pass
+                b64_data = obs["scatter_plot"]
+                if isinstance(b64_data, str) and b64_data.startswith("data:image"):
+                    b64_data = b64_data.split(",", 1)[1]
+                img_data = base64.b64decode(b64_data)
+                img = Image.open(io.BytesIO(img_data))
+                img.load()  # Force loading data before BytesIO closes
+                return img
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
         return None
 
     async def reset_env():
         try:
             data = await web_manager.reset_environment()
             obs_md = _format_observation(data)
+            
+            # Remove giant base64 string from JSON display
+            import copy
+            data_clean = copy.deepcopy(data)
+            if "scatter_plot" in data_clean.get("observation", {}):
+                data_clean["observation"]["scatter_plot"] = "<base64 encoded image>"
+                
             return (
                 get_img(data),
                 obs_md,
-                json.dumps(data, indent=2),
+                json.dumps(data_clean, indent=2),
                 "Environment reset successfully.",
             )
         except Exception as e:
@@ -123,10 +136,17 @@ def build_gradio_app(
             try:
                 data = await web_manager.step_environment(action_data)
                 obs_md = _format_observation(data)
+
+                # Remove giant base64 string from JSON display
+                import copy
+                data_clean = copy.deepcopy(data)
+                if "scatter_plot" in data_clean.get("observation", {}):
+                    data_clean["observation"]["scatter_plot"] = "<base64 encoded image>"
+
                 return (
                     get_img(data),
                     obs_md,
-                    json.dumps(data, indent=2),
+                    json.dumps(data_clean, indent=2),
                     "Step complete.",
                 )
             except Exception as e:
@@ -143,7 +163,13 @@ def build_gradio_app(
     def get_state_sync():
         try:
             data = web_manager.get_state()
-            return json.dumps(data, indent=2)
+            
+            import copy
+            data_clean = copy.deepcopy(data)
+            if "scatter_plot" in data_clean:
+                data_clean["scatter_plot"] = "<base64 encoded image>"
+                
+            return json.dumps(data_clean, indent=2)
         except Exception as e:
             return f"Error: {e}"
 
