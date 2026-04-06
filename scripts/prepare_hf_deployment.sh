@@ -99,7 +99,7 @@ OPENENV_GIT_REF="${OPENENV_GIT_REF:-}"
 PRIVATE=true
 DRY_RUN=false
 DEPLOY_ALL=true
-SKIP_COLLECTION=false
+SKIP_COLLECTION=true
 
 SELECTED_ENVS=()
 DEPLOYED_SPACES=()
@@ -282,14 +282,14 @@ fi
 #}
 is_deployable_env() {
     local env_name="$1"
-    warn "DEBUG pwd: $(pwd)"
-    warn "DEBUG checking dir: envs/$env_name → $([ -d "envs/$env_name" ] && echo EXISTS || echo MISSING)"
-    warn "DEBUG checking Dockerfile: envs/$env_name/Dockerfile → $([ -f "envs/$env_name/Dockerfile" ] && echo EXISTS || echo MISSING)"
-    warn "DEBUG checking server/Dockerfile: envs/$env_name/server/Dockerfile → $([ -f "envs/$env_name/server/Dockerfile" ] && echo EXISTS || echo MISSING)"
-    warn "DEBUG checking README: envs/$env_name/README.md → $([ -f "envs/$env_name/README.md" ] && echo EXISTS || echo MISSING)"
-    warn "DEBUG ls envs/: $(ls envs/ 2>&1)"
-    warn "DEBUG ls envs/$env_name/: $(ls "envs/$env_name/" 2>&1)"
+    # If env_name is exactly 'colorblind_env' (the default) or matches our root packages,
+    # we consider the project root as the environment source.
+    if [ "$env_name" = "colorblind_env" ] || [ "$env_name" = "colorblind-env" ]; then
+        [ -f "Dockerfile" ] && [ -f "README.md" ]
+        return $?
+    fi
 
+    # Fallback for standard envs/ structure if it exists
     [ -d "envs/$env_name" ] &&
         { [ -f "envs/$env_name/server/Dockerfile" ] || [ -f "envs/$env_name/Dockerfile" ]; } &&
         [ -f "envs/$env_name/README.md" ]
@@ -297,6 +297,12 @@ is_deployable_env() {
 
 resolve_env_dockerfile() {
     local env_name="$1"
+    if [ "$env_name" = "colorblind_env" ] || [ "$env_name" = "colorblind-env" ]; then
+        if [ -f "Dockerfile" ]; then
+            printf "%s" "Dockerfile"
+            return 0
+        fi
+    fi
     if [ -f "envs/$env_name/server/Dockerfile" ]; then
         printf "%s" "envs/$env_name/server/Dockerfile"
         return 0
@@ -309,6 +315,14 @@ resolve_env_dockerfile() {
 }
 
 discover_all_envs() {
+    # If no envs/ directory, we default to the root environment
+    if [ ! -d "envs" ]; then
+        if is_deployable_env "colorblind_env"; then
+            SELECTED_ENVS+=("colorblind_env")
+        fi
+        return
+    fi
+
     local env_name=""
     while IFS= read -r env_name; do
         if is_deployable_env "$env_name"; then
@@ -386,12 +400,18 @@ create_environment_dockerfile() {
     local env_name="$1"
     local stage_dir="$2"
     local dockerfile_path=""
-    local prepare_script="envs/$env_name/server/prepare_hf.sh"
+    local prepare_script="server/prepare_hf.sh"
     local tmp_dockerfile="$stage_dir/Dockerfile.tmp"
 
     dockerfile_path=$(resolve_env_dockerfile "$env_name") || {
         error "Could not find Dockerfile for $env_name"
     }
+
+    if [ "$env_name" = "colorblind_env" ] || [ "$env_name" = "colorblind-env" ]; then
+        prepare_script="server/prepare_hf.sh" # Simplified path for single env
+    else
+        prepare_script="envs/$env_name/server/prepare_hf.sh"
+    fi
 
     cp "$dockerfile_path" "$stage_dir/Dockerfile"
 
@@ -569,7 +589,12 @@ ensure_readme_front_matter_tags() {
 create_readme() {
     local env_name="$1"
     local stage_dir="$2"
-    local readme_source="envs/$env_name/README.md"
+    local readme_source=""
+    if [ "$env_name" = "colorblind_env" ] || [ "$env_name" = "colorblind-env" ]; then
+        readme_source="README.md"
+    else
+        readme_source="envs/$env_name/README.md"
+    fi
     local output_readme="$stage_dir/README.md"
     local env_class="Env"
 
@@ -655,9 +680,6 @@ prepare_stage() {
     # Include full src for Dockerfiles that reference src/ directly.
     cp -R src "$stage_dir/"
     # Back-compat for legacy Dockerfiles that still copy src/core.
-    # We provide both:
-    #  - core/* imports at /app/src/core/*
-    #  - openenv/* imports at /app/src/core/openenv/*
     if [ -d "$stage_dir/src/openenv" ]; then
         mkdir -p "$stage_dir/src/core"
         if [ -d "$stage_dir/src/openenv_core" ]; then
@@ -666,15 +688,27 @@ prepare_stage() {
         mkdir -p "$stage_dir/src/core/openenv"
         cp -R "$stage_dir/src/openenv/." "$stage_dir/src/core/openenv/"
     fi
-    cp -R "envs/$env_name" "$stage_dir/envs/"
+    
+    if [ "$env_name" = "colorblind_env" ] || [ "$env_name" = "colorblind-env" ]; then
+        # For root env, server and other root folders are needed.
+        cp -R server "$stage_dir/"
+        # We don't need to copy "envs/$env_name" because root files are already copied in handle_stage
+    else
+        cp -R "envs/$env_name" "$stage_dir/envs/"
+    fi
 
     # Include root metadata used by some Dockerfiles.
     [ -f pyproject.toml ] && cp pyproject.toml "$stage_dir/"
-    # Do not copy root uv.lock by default. For env-scoped projects, a mismatched
-    # lock file can make `uv sync --frozen` fail inside Docker builds.
-
+    
     # Also copy env content to stage root for Dockerfiles that use "COPY . /app/env".
-    cp -R "envs/$env_name/." "$stage_dir/"
+    if [ "$env_name" = "colorblind_env" ] || [ "$env_name" = "colorblind-env" ]; then
+        # Copy everything except staging dirs and hidden files to stage root
+        # This is a bit tricky, but since we are copying to hf-staging we should be careful.
+        # But prepare_stage usually works with a clean stage_dir.
+        cp -R . "$stage_dir/" 2>/dev/null || true
+    else
+        cp -R "envs/$env_name/." "$stage_dir/"
+    fi
 
     strip_stage_artifacts "$stage_dir"
 

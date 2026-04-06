@@ -68,9 +68,9 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           set -euo pipefail
-          chmod +x OpenEnv/scripts/prepare_hf_deployment.sh
+          chmod +x scripts/prepare_hf_deployment.sh
 
-          cmd=(OpenEnv/scripts/prepare_hf_deployment.sh
+          cmd=(scripts/prepare_hf_deployment.sh
             --hf-namespace "${{ github.event.inputs.hf_namespace }}"
             --openenv-version "${{ github.event.inputs.openenv_version }}"
             )
