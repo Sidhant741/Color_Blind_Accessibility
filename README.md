@@ -1,3 +1,11 @@
+---
+title: colorblind_env
+sdk: docker
+app_port: 8000
+base_path: /web
+tags:
+  - openenv
+---
 # Color_Blind_Accessibility
 
 ## Project Overview
@@ -353,5 +361,3 @@ Once trained, this agent becomes a browser extension that:
 - [ ] Additional Endpoints to Expose
 - [ ] Move the hardcoded value to config (Optional)
 - [ ] Better logic in _assign_broken_colors()
-- [ ] Grader.py write it later
-- [ ] scatter plot np.ndarry is not serializable

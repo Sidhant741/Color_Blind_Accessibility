@@ -1,2 +1,6 @@
 .pytest_cache/
 .__pycache__/
+.env
+*.pyc
+openenv_colorblind_env.egg-info/*
+.venv/*
