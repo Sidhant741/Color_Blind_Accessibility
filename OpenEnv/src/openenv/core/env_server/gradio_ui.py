@@ -12,7 +12,9 @@ Mount at /web via gr.mount_gradio_app() from create_web_interface_app().
 """
 
 from __future__ import annotations
-
+import base64
+import io
+from PIL import Image
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -93,17 +95,28 @@ def build_gradio_app(
     readme_content = _readme_section(metadata)
     display_title = get_gradio_display_title(metadata, fallback=title)
 
+    def get_img(data):
+        try:
+            obs = data.get("observation", {})
+            if "scatter_plot" in obs and obs["scatter_plot"]:
+                img_data = base64.b64decode(obs["scatter_plot"])
+                return Image.open(io.BytesIO(img_data))
+        except Exception:
+            pass
+        return None
+
     async def reset_env():
         try:
             data = await web_manager.reset_environment()
             obs_md = _format_observation(data)
             return (
+                get_img(data),
                 obs_md,
                 json.dumps(data, indent=2),
                 "Environment reset successfully.",
             )
         except Exception as e:
-            return ("", "", f"Error: {e}")
+            return (None, "", "", f"Error: {e}")
 
     def _step_with_action(action_data: Dict[str, Any]):
         async def _run():
@@ -111,18 +124,19 @@ def build_gradio_app(
                 data = await web_manager.step_environment(action_data)
                 obs_md = _format_observation(data)
                 return (
+                    get_img(data),
                     obs_md,
                     json.dumps(data, indent=2),
                     "Step complete.",
                 )
             except Exception as e:
-                return ("", "", f"Error: {e}")
+                return (None, "", "", f"Error: {e}")
 
         return _run
 
     async def step_chat(message: str):
         if not (message or str(message).strip()):
-            return ("", "", "Please enter an action message.")
+            return (None, "", "", "Please enter an action message.")
         action = {"message": str(message).strip()}
         return await _step_with_action(action)()
 
@@ -143,6 +157,7 @@ def build_gradio_app(
                     gr.Markdown(readme_content)
 
             with gr.Column(scale=2, elem_classes="col-right"):
+                img_display = gr.Image(label="Scatter Plot", type="pil", interactive=False)
                 obs_display = gr.Markdown(
                     value=("# Playground\n\nClick **Reset** to start a new episode."),
                 )
@@ -219,18 +234,18 @@ def build_gradio_app(
 
         reset_btn.click(
             fn=reset_env,
-            outputs=[obs_display, raw_json, status],
+            outputs=[img_display, obs_display, raw_json, status],
         )
         step_btn.click(
             fn=step_fn,
             inputs=step_inputs,
-            outputs=[obs_display, raw_json, status],
+            outputs=[img_display, obs_display, raw_json, status],
         )
         if is_chat_env:
             action_input.submit(
                 fn=step_fn,
                 inputs=step_inputs,
-                outputs=[obs_display, raw_json, status],
+                outputs=[img_display, obs_display, raw_json, status],
             )
         state_btn.click(
             fn=get_state_sync,
