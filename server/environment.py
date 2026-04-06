@@ -13,7 +13,7 @@ DONE 8. _compute_reward
 DONE 9. _check_done
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, List
 
 from uuid import uuid4
 
