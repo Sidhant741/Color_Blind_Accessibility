@@ -69,7 +69,7 @@ except ImportError as e:
 class CBAEnvironment(Environment):
     """
     """
-
+    SUPPORTS_CONCURRENT_SESSIONS = True
     def __init__(self, task="easy"):
         super().__init__()
 

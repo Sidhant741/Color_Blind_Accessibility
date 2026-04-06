@@ -155,7 +155,8 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
 web_interface.build_gradio_app = build_gradio_app
 
 app = create_app(
-    create_cba_environment, CBAAction, CBAObservation, env_name="cba_env"
+    create_cba_environment, CBAAction, CBAObservation, env_name="cba_env",
+    max_concurrent_envs=10,
 )
 
 def main():
