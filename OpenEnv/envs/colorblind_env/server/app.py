@@ -66,25 +66,38 @@ from PIL import Image
 import numpy as np
 
 def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, quick_start_md):
-    with gr.Blocks(title=title) as demo:
-        gr.Markdown(f"# {title}")
-        img_display = gr.Image(label="Scatter Plot", type="numpy", interactive=False)
-        
-        step_inputs = []
-        with gr.Group():
-            for field in action_fields:
-                name = field["name"]
-                ph = field.get("placeholder", "")
-                inp = gr.Textbox(label=name.replace("_", " ").title(), placeholder=ph)
-                step_inputs.append(inp)
-                
-            with gr.Row():
-                step_btn = gr.Button("Step", variant="primary")
-                reset_btn = gr.Button("Reset", variant="secondary")
-                state_btn = gr.Button("Get state", variant="secondary")
+    import openenv.core.env_server.gradio_ui as gradio_ui
+    readme_content = gradio_ui._readme_section(metadata)
+    display_title = gradio_ui.get_gradio_display_title(metadata, fallback=title)
+    
+    with gr.Blocks(title=display_title) as demo:
+        with gr.Row():
+            with gr.Column(scale=1, elem_classes="col-left"):
+                if quick_start_md:
+                    with gr.Accordion("Quick Start", open=True):
+                        gr.Markdown(quick_start_md)
+                with gr.Accordion("README", open=False):
+                    gr.Markdown(readme_content)
 
-            status = gr.Textbox(label="Status", interactive=False)
-            raw_json = gr.Code(label="Raw JSON response", language="json", interactive=False)
+            with gr.Column(scale=2, elem_classes="col-right"):
+                img_display = gr.Image(label="Scatter Plot", type="numpy", interactive=False)
+                obs_display = gr.Markdown(value="# Playground\n\nClick **Reset** to start a new episode.")
+                
+                step_inputs = []
+                with gr.Group():
+                    for field in action_fields:
+                        name = field["name"]
+                        ph = field.get("placeholder", "")
+                        inp = gr.Textbox(label=name.replace("_", " ").title(), placeholder=ph)
+                        step_inputs.append(inp)
+                        
+                    with gr.Row():
+                        step_btn = gr.Button("Step", variant="primary")
+                        reset_btn = gr.Button("Reset", variant="secondary")
+                        state_btn = gr.Button("Get state", variant="secondary")
+
+                    status = gr.Textbox(label="Status", interactive=False)
+                    raw_json = gr.Code(label="Raw JSON response", language="json", interactive=False)
 
         def extract_img(data):
             try:
@@ -138,8 +151,11 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
         
     return demo
 
+# Override the default UI builder directly
+web_interface.build_gradio_app = build_gradio_app
+
 app = create_app(
-    create_cba_environment, CBAAction, CBAObservation, env_name="cba_env", gradio_builder=build_gradio_app
+    create_cba_environment, CBAAction, CBAObservation, env_name="cba_env"
 )
 
 def main():
