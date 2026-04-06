@@ -81,15 +81,42 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
 
             with gr.Column(scale=2, elem_classes="col-right"):
                 img_display = gr.Image(label="Scatter Plot", type="numpy", interactive=False)
-                obs_display = gr.Markdown(value="# Playground\n\nClick **Reset** to start a new episode.")
+                obs_display = gr.Markdown(value="# Playground\n\nChoose a difficulty and click **Reset** to start.")
                 
-                step_inputs = []
                 with gr.Group():
+                    mode_radio = gr.Radio(
+                        ["easy", "medium", "hard"], 
+                        label="Difficulty Mode", 
+                        value="easy",
+                        info="Easy: 2 categories, Medium: 5 categories, Hard: 10 categories"
+                    )
+                    
+                    inputs_dict = {}
                     for field in action_fields:
                         name = field["name"]
+                        label = name.replace("_", " ").title()
                         ph = field.get("placeholder", "")
-                        inp = gr.Textbox(label=name.replace("_", " ").title(), placeholder=ph)
-                        step_inputs.append(inp)
+                        
+                        if name == "fix_type":
+                            inputs_dict[name] = gr.Dropdown(
+                                choices=["recolor", "reshape"], 
+                                label=label, 
+                                value="recolor",
+                                visible=False # Hidden by default in easy mode
+                            )
+                        elif name == "change_shape":
+                            inputs_dict[name] = gr.Dropdown(
+                                choices=["o", "^", "*", "x", "+", "p", "s"], 
+                                label=label, 
+                                value="o",
+                                visible=False
+                            )
+                        elif name == "change_hex":
+                            inputs_dict[name] = gr.Textbox(label=label, placeholder=ph, visible=True)
+                        else:
+                            inputs_dict[name] = gr.Textbox(label=label, placeholder=ph)
+                    
+                    step_inputs = [inputs_dict[f["name"]] for f in action_fields]
                         
                     with gr.Row():
                         step_btn = gr.Button("Step", variant="primary")
@@ -98,6 +125,36 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
 
                     status = gr.Textbox(label="Status", interactive=False)
                     raw_json = gr.Code(label="Raw JSON response", language="json", interactive=False)
+
+        def update_ui_visibility(mode, fix_type):
+            """Update visibility of fields based on mode and fix type."""
+            updates = {}
+            if mode == "easy":
+                updates[inputs_dict["fix_type"]] = gr.update(visible=False, value="recolor")
+                updates[inputs_dict["change_hex"]] = gr.update(visible=True)
+                updates[inputs_dict["change_shape"]] = gr.update(visible=False)
+            else:
+                updates[inputs_dict["fix_type"]] = gr.update(visible=True)
+                if fix_type == "recolor":
+                    updates[inputs_dict["change_hex"]] = gr.update(visible=True)
+                    updates[inputs_dict["change_shape"]] = gr.update(visible=False)
+                else:
+                    updates[inputs_dict["change_hex"]] = gr.update(visible=False)
+                    updates[inputs_dict["change_shape"]] = gr.update(visible=True)
+            
+            return [updates[comp] for comp in [inputs_dict["fix_type"], inputs_dict["change_hex"], inputs_dict["change_shape"]]]
+
+        mode_radio.change(
+            fn=update_ui_visibility,
+            inputs=[mode_radio, inputs_dict["fix_type"]],
+            outputs=[inputs_dict["fix_type"], inputs_dict["change_hex"], inputs_dict["change_shape"]]
+        )
+        
+        inputs_dict["fix_type"].change(
+            fn=update_ui_visibility,
+            inputs=[mode_radio, inputs_dict["fix_type"]],
+            outputs=[inputs_dict["fix_type"], inputs_dict["change_hex"], inputs_dict["change_shape"]]
+        )
 
         def extract_img(data):
             try:
@@ -121,10 +178,10 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
                 c["observation"]["scatter_plot"] = "<base64 image hidden for clarity>"
             return json.dumps(c, indent=2)
 
-        async def do_reset():
+        async def do_reset(mode):
             try:
-                data = await web_manager.reset_environment()
-                return extract_img(data), clean_json(data), "Environment reset successfully."
+                data = await web_manager.reset_environment(task=mode)
+                return extract_img(data), clean_json(data), f"Environment reset to {mode} mode successfully."
             except Exception as e:
                 return None, "", f"Error: {e}"
                 
@@ -145,7 +202,7 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
             except Exception as e:
                 return f"Error: {e}"
 
-        reset_btn.click(do_reset, outputs=[img_display, raw_json, status])
+        reset_btn.click(do_reset, inputs=[mode_radio], outputs=[img_display, raw_json, status])
         step_btn.click(do_step, inputs=step_inputs, outputs=[img_display, raw_json, status])
         state_btn.click(get_state_sync, outputs=[raw_json])
         

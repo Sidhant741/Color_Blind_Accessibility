@@ -283,7 +283,7 @@ class CBAEnvironment(Environment):
         return img_b64.decode('utf-8')
 
 
-    def reset(self) -> CBAObservation:
+    def reset(self, task: Optional[str] = None) -> CBAObservation:
         """
         Reset the environment.
 
@@ -298,6 +298,10 @@ class CBAEnvironment(Environment):
         Returns:
             CBAObservation with initial game state
         """
+        if task is not None:
+            assert task in ['easy', 'medium', 'hard'], "task value must be from ['easy', 'medium', 'hard']"
+            self.task = task
+            self.task_config = TASK_CONFIGS[self.task]
         self.steps_taken = 0
         self.is_done = False
         self.is_solved = False
