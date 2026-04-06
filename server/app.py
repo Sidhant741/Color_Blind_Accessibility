@@ -263,6 +263,12 @@ app = create_app(
     max_concurrent_envs=10,
 )
 
+from fastapi.responses import RedirectResponse
+
+@app.get("/")
+def redirect_to_web():
+    return RedirectResponse(url="/web")
+
 def main():
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7860)
