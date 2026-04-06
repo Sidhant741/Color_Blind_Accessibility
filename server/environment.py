@@ -13,7 +13,7 @@ DONE 8. _compute_reward
 DONE 9. _check_done
 """
 
-from typing import Any
+from typing import Any, Optional
 
 from uuid import uuid4
 
@@ -283,7 +283,7 @@ class CBAEnvironment(Environment):
         return img_b64.decode('utf-8')
 
 
-    def reset(self, task: Optional[str] = None) -> CBAObservation:
+    def reset(self, task: Optional[str] = None, cb_types: Optional[List[str]] = None) -> CBAObservation:
         """
         Reset the environment.
 
@@ -308,8 +308,11 @@ class CBAEnvironment(Environment):
         self.fixes_applied = []
         self.delta_E_matrix = {}
 
-        all_cb_types = list(ColorBlindType)
-        self.colorblind_types = random.sample(all_cb_types, self.task_config["no_of_cb_types"])
+        if cb_types:
+            self.colorblind_types = [ColorBlindType(ct) for ct in cb_types]
+        else:
+            all_cb_types = list(ColorBlindType)
+            self.colorblind_types = random.sample(all_cb_types, self.task_config["no_of_cb_types"])
 
         print("Starting reset...")
         self.categories = self._generate_categories()
