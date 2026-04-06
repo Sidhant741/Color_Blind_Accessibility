@@ -24,7 +24,7 @@ src_dir = str(repo_root / "src")
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from openenv.core.env_server import create_app
+from openenv.core.env_server import create_web_interface_app
 import openenv.core.env_server.web_interface as web_interface
 
 def custom_generate_placeholder(field_name: str, field_info: dict) -> str:
@@ -258,18 +258,18 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
 # Override the default UI builder directly
 web_interface.build_gradio_app = build_gradio_app
 
-app = create_app(
-    create_cba_environment, CBAAction, CBAObservation, env_name="cba_env",
+app = create_web_interface_app(
+    create_cba_environment, CBAAction, CBAObservation,
+    env_name="cba_env",
     max_concurrent_envs=10,
 )
 
-from fastapi import FastAPI
-
-app = FastAPI()
+# Redirect root to the Gradio UI so HF Spaces shows the app
+from fastapi.responses import RedirectResponse
 
 @app.get("/")
 def root():
-    return {"status": "ok"}
+    return RedirectResponse(url="/web")
 
 def main():
     import uvicorn
