@@ -1,12 +1,4 @@
----
-title: colorblind_env
-sdk: docker
-app_port: 7860
-base_path: /web
-tags:
-  - openenv
----
-# Color_Blind_Accessibility OpenEnv Environement
+# Color Blind Accessibility OpenEnv Environement
 
 ## Project Overview
 
@@ -70,6 +62,16 @@ The agent is scored using perceptual color difference (delta_E) as seen by a col
 Final score is normalized to `[0, 1]`.
 
 <!-- 
+
+---
+title: colorblind_env
+sdk: docker
+app_port: 7860
+base_path: /web
+tags:
+  - openenv
+---
+
 ## Some Concepts : Tasks and Graders
 
 Tasks : It is the specific problem the agent is asked to solve in a single episode. It defines:
@@ -390,18 +392,18 @@ Once trained, this agent becomes a browser extension that:
 
 - [X] Setup Environment
 - [X] Real-world Task simulation
-- [ ] OpenEnv spec compliance
+- [X] OpenEnv spec compliance
 - [X] Easy Task Code Written + Reward
 - [ ] Medium Task Code Written + Reward
 - [ ] Hard Task Code Written + Reward
-- [ ] Baseline Inference Script
-- [ ] Deploy to a HuggingFace Space
-- [ ] Containerized Execution
-- [ ] Documentation
-- [ ] HF Space deploys
+- [X] Baseline Inference Script
+- [X] Deploy to a HuggingFace Space
+- [X] Containerized Execution
+- [X] Documentation
+- [X] HF Space deploys
 - [X] Validator
-- [ ] Additional Endpoints to Expose
+- [X] Additional Endpoints to Expose
 - [ ] Move the hardcoded value to config (Optional)
-- [ ] Better logic in _assign_broken_colors()
+- [X] Better logic in _assign_broken_colors()
 
 -->
