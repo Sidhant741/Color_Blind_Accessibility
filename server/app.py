@@ -19,12 +19,12 @@ import os
 import sys
 from pathlib import Path
 
-repo_root = Path(__file__).resolve().parent.parent.parent.parent
+repo_root = Path(__file__).resolve().parent.parent
 src_dir = str(repo_root / "src")
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from openenv.core.env_server import create_app
+from openenv.core.env_server import create_web_interface_app
 import openenv.core.env_server.web_interface as web_interface
 
 def custom_generate_placeholder(field_name: str, field_info: dict) -> str:
@@ -81,15 +81,61 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
 
             with gr.Column(scale=2, elem_classes="col-right"):
                 img_display = gr.Image(label="Scatter Plot", type="numpy", interactive=False)
-                obs_display = gr.Markdown(value="# Playground\n\nClick **Reset** to start a new episode.")
+                obs_display = gr.Markdown(value="# Playground\n\nChoose a difficulty and click **Reset** to start.")
                 
-                step_inputs = []
                 with gr.Group():
+                    mode_radio = gr.Radio(
+                        ["easy", "medium", "hard"], 
+                        label="Difficulty Mode", 
+                        value="easy",
+                        info="Easy: 2 categories, Medium: 5 categories, Hard: 10 categories"
+                    )
+                    
+                    cb_type_easy = gr.Dropdown(
+                        choices=["deutronopia", "protanopia", "titanopia"],
+                        label="Type of Colorblind",
+                        value="deutronopia",
+                        visible=True
+                    )
+                    cb_type_medium = gr.Dropdown(
+                        choices=[
+                            "deutronopia and protanopia", 
+                            "deutronopia and titanopia", 
+                            "protanopia and tritanopia"
+                        ],
+                        label="Type of Colorblind",
+                        value="deutronopia and protanopia",
+                        visible=False
+                    )
+                    
+                    gr.HTML("<hr>")
+                    
+                    inputs_dict = {}
                     for field in action_fields:
                         name = field["name"]
+                        label = name.replace("_", " ").title()
                         ph = field.get("placeholder", "")
-                        inp = gr.Textbox(label=name.replace("_", " ").title(), placeholder=ph)
-                        step_inputs.append(inp)
+                        
+                        if name == "fix_type":
+                            inputs_dict[name] = gr.Dropdown(
+                                choices=["recolor", "reshape"], 
+                                label=label, 
+                                value="recolor",
+                                visible=False # Hidden in easy
+                            )
+                        elif name == "change_shape":
+                            inputs_dict[name] = gr.Dropdown(
+                                choices=["o", "^", "*", "x", "+", "p", "s"], 
+                                label=label, 
+                                value="o",
+                                visible=False
+                            )
+                        elif name == "change_hex":
+                            inputs_dict[name] = gr.Textbox(label=label, placeholder=ph, visible=True)
+                        else:
+                            inputs_dict[name] = gr.Textbox(label=label, placeholder=ph)
+                    
+                    step_inputs = [inputs_dict[f["name"]] for f in action_fields]
                         
                     with gr.Row():
                         step_btn = gr.Button("Step", variant="primary")
@@ -98,6 +144,50 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
 
                     status = gr.Textbox(label="Status", interactive=False)
                     raw_json = gr.Code(label="Raw JSON response", language="json", interactive=False)
+
+        def update_ui_visibility(mode, fix_type):
+            """Update visibility of fields based on mode and fix type."""
+            updates = {}
+            # Defaults for all modes
+            updates[cb_type_easy] = gr.update(visible=False)
+            updates[cb_type_medium] = gr.update(visible=False)
+            
+            if mode == "easy":
+                updates[inputs_dict["fix_type"]] = gr.update(visible=False, value="recolor")
+                updates[inputs_dict["change_hex"]] = gr.update(visible=True)
+                updates[inputs_dict["change_shape"]] = gr.update(visible=False)
+                updates[cb_type_easy] = gr.update(visible=True)
+            else:
+                updates[inputs_dict["fix_type"]] = gr.update(visible=True)
+                if mode == "medium":
+                    updates[cb_type_medium] = gr.update(visible=True)
+                
+                if fix_type == "recolor":
+                    updates[inputs_dict["change_hex"]] = gr.update(visible=True)
+                    updates[inputs_dict["change_shape"]] = gr.update(visible=False)
+                else:
+                    updates[inputs_dict["change_hex"]] = gr.update(visible=False)
+                    updates[inputs_dict["change_shape"]] = gr.update(visible=True)
+            
+            return [
+                updates[cb_type_easy],
+                updates[cb_type_medium],
+                updates[inputs_dict["fix_type"]], 
+                updates[inputs_dict["change_hex"]], 
+                updates[inputs_dict["change_shape"]]
+            ]
+
+        mode_radio.change(
+            fn=update_ui_visibility,
+            inputs=[mode_radio, inputs_dict["fix_type"]],
+            outputs=[cb_type_easy, cb_type_medium, inputs_dict["fix_type"], inputs_dict["change_hex"], inputs_dict["change_shape"]]
+        )
+        
+        inputs_dict["fix_type"].change(
+            fn=update_ui_visibility,
+            inputs=[mode_radio, inputs_dict["fix_type"]],
+            outputs=[cb_type_easy, cb_type_medium, inputs_dict["fix_type"], inputs_dict["change_hex"], inputs_dict["change_shape"]]
+        )
 
         def extract_img(data):
             try:
@@ -121,10 +211,24 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
                 c["observation"]["scatter_plot"] = "<base64 image hidden for clarity>"
             return json.dumps(c, indent=2)
 
-        async def do_reset():
+        async def do_reset(mode, cb_easy, cb_medium):
+            cb_mapping = {
+                "deutronopia": "deuteranopia",
+                "protanopia": "protanopia",
+                "titanopia": "tritanopia",
+                "tritanopia": "tritanopia"
+            }
+            
+            cb_types = None
+            if mode == "easy":
+                cb_types = [cb_mapping.get(cb_easy, cb_easy)]
+            elif mode == "medium":
+                parts = cb_medium.split(" and ")
+                cb_types = [cb_mapping.get(p.strip(), p.strip()) for p in parts]
+            
             try:
-                data = await web_manager.reset_environment()
-                return extract_img(data), clean_json(data), "Environment reset successfully."
+                data = await web_manager.reset_environment(task=mode, cb_types=cb_types)
+                return extract_img(data), clean_json(data), f"Environment reset to {mode} mode with {cb_types} successfully."
             except Exception as e:
                 return None, "", f"Error: {e}"
                 
@@ -145,7 +249,7 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
             except Exception as e:
                 return f"Error: {e}"
 
-        reset_btn.click(do_reset, outputs=[img_display, raw_json, status])
+        reset_btn.click(do_reset, inputs=[mode_radio, cb_type_easy, cb_type_medium], outputs=[img_display, raw_json, status])
         step_btn.click(do_step, inputs=step_inputs, outputs=[img_display, raw_json, status])
         state_btn.click(get_state_sync, outputs=[raw_json])
         
@@ -154,14 +258,22 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
 # Override the default UI builder directly
 web_interface.build_gradio_app = build_gradio_app
 
-app = create_app(
-    create_cba_environment, CBAAction, CBAObservation, env_name="cba_env",
+app = create_web_interface_app(
+    create_cba_environment, CBAAction, CBAObservation,
+    env_name="cba_env",
     max_concurrent_envs=10,
 )
 
+# Redirect root to the Gradio UI so HF Spaces shows the app
+from fastapi.responses import RedirectResponse
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/web/")
+
 def main():
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=7860)
 
 if __name__ == "__main__":
     main()

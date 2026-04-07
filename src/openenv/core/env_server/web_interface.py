@@ -317,11 +317,11 @@ class WebInterfaceManager:
         for client in disconnected_clients:
             self.connected_clients.remove(client)
 
-    async def reset_environment(self) -> Dict[str, Any]:
+    async def reset_environment(self, **kwargs) -> Dict[str, Any]:
         """Reset the environment and update state."""
         # Run sync reset in thread pool to avoid blocking event loop
         # and to support environments using sync libraries (e.g., Playwright)
-        observation: Observation = await self._run_sync_in_thread_pool(self.env.reset)
+        observation: Observation = await self._run_sync_in_thread_pool(self.env.reset, **kwargs)
         state: State = self.env.state
 
         # Serialize observation once using shared utility

@@ -13,7 +13,7 @@ DONE 8. _compute_reward
 DONE 9. _check_done
 """
 
-from typing import Any
+from typing import Any, Optional, List
 
 from uuid import uuid4
 
@@ -237,6 +237,7 @@ class CBAEnvironment(Environment):
         return img_b64.decode('utf-8')
 
 
+
     def reset(self, task: str = "easy") -> CBAObservation:
         """
         Reset the environment.
@@ -257,7 +258,9 @@ class CBAEnvironment(Environment):
             CBAObservation with initial game state
         """
         if task is not None:
-            assert task in ['easy', 'medium', 'hard'], "task must be 'easy', 'medium', or 'hard'"
+            assert task in ['easy', 'medium', 'hard'], "task value must be from ['easy', 'medium', 'hard']"
+            self.task = task
+            self.task_config = TASK_CONFIGS[self.task]
             self.task = task
         
         self.task_config = TASK_CONFIGS[self.task]  # set task_config based on the finalized task
@@ -268,8 +271,11 @@ class CBAEnvironment(Environment):
         self.fixes_applied = []
         self.delta_E_matrix = {}
 
-        all_cb_types = list(ColorBlindType)
-        self.colorblind_types = random.sample(all_cb_types, self.task_config["no_of_cb_types"])
+        if cb_types:
+            self.colorblind_types = [ColorBlindType(ct) for ct in cb_types]
+        else:
+            all_cb_types = list(ColorBlindType)
+            self.colorblind_types = random.sample(all_cb_types, self.task_config["no_of_cb_types"])
 
         print("Starting reset...")
         self.categories = self._generate_categories()

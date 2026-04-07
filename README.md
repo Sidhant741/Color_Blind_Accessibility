@@ -1,4 +1,16 @@
+<<<<<<< HEAD
+---
+title: colorblind_env
+sdk: docker
+app_port: 7860
+#base_path: /web
+tags:
+  - openenv
+---
+# Color_Blind_Accessibility
+=======
 # Color Blind Accessibility OpenEnv Environement
+>>>>>>> 04b891dc56c9109712d241495d7bc229c9e302e2
 
 ## Project Overview
 
