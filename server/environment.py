@@ -29,30 +29,6 @@ import io
 matplotlib.use('Agg')  # Use non-interactive backend — required for tostring_rgb / buffer_rgba
 import matplotlib.pyplot as plt
 
-# # Support both in-repo and standalone imports
-# try:
-#     # In-repo imports (when running from OpenEnv repository)
-#     from core.env_server.interfaces import Environment
-#     from core.env_server.types import State
-
-#     from ..models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
-#     from .config import *
-#     from .utils import compute_delta_e, rgb_to_hex
-
-# except ImportError:
-#     from models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
-#     from config import *
-#     from utils import compute_delta_e, rgb_to_hex
-
-#     try:
-#         # Standalone imports with the current openenv package namespace
-#         from openenv.core.env_server.interfaces import Environment
-#         from openenv.core.env_server.types import State
-#     except ImportError:
-#         # Backward-compatible standalone imports with the legacy namespace
-#         from openenv_core.env_server.interfaces import Environment
-#         from openenv_core.env_server.types import State
-
 from openenv.core.env_server import Environment
 
 try:
@@ -70,18 +46,15 @@ class CBAEnvironment(Environment):
     """
     """
     SUPPORTS_CONCURRENT_SESSIONS = True
-    def __init__(self, task="easy"):
+    def __init__(self,):
         super().__init__()
 
         """
         Initialize the CBA Environment
         """
-
-        assert task in ['easy', 'medium', 'hard'], "task value must be from ['easy', 'medium', 'hard']"
-
-        self.task = task
+        self.task = "easy"  # default task is easy, can be overridden by reset() argument or env variable
         
-        self.task_config = TASK_CONFIGS[self.task]
+        # self.task_config = TASK_CONFIGS[self.task]  # this will be set in reset() when task is finalized
 
         self._state = None
 
@@ -126,96 +99,77 @@ class CBAEnvironment(Environment):
         
         return categories
     
+    def _simulate_cb(self, rgb, cb_type):
+        rgb = rgb / 255.0
+
+        if cb_type == ColorBlindType.PROTANOPIA:
+            matrix = np.array([
+                [0.567, 0.433, 0],
+                [0.558, 0.442, 0],
+                [0, 0.242, 0.758]
+            ])
+        elif cb_type == ColorBlindType.DEUTERANOPIA:
+            matrix = np.array([
+                [0.625, 0.375, 0],
+                [0.7, 0.3, 0],
+                [0, 0.3, 0.7]
+            ])
+        else:
+            matrix = np.array([
+                [0.95, 0.05, 0],
+                [0, 0.433, 0.567],
+                [0, 0.475, 0.525]
+            ])
+
+        cb_rgb = matrix @ rgb
+        return np.clip(cb_rgb, 0, 1) * 255
+
+    def _color_distance(self, c1, c2):
+        return np.linalg.norm(c1 - c2)
+
+    
     def _assign_broken_colors(self):
-        """
-        Deliberately assigns colors that are indistinguishable for the active CB types.
-        Uses LMS color space to generate confusion pairs.
-        """
-        l_shift = self.task_config['l_shift']
-        cb_types = self.colorblind_types
-        threshold = self.task_config['delta_E_threshold']
-        max_retries = 5000
- 
-        # LMS matrices
-        RGB_TO_LMS = np.array([
-            [0.3139902, 0.6395129, 0.0464975],
-            [0.1553728, 0.7578945, 0.0867014],
-            [0.0177523, 0.1094431, 0.8725692]
-        ])
-        LMS_TO_RGB = np.linalg.inv(RGB_TO_LMS)
- 
-        # CB type to cone index mapping
-        cb_cone_index = {
-            ColorBlindType.PROTANOPIA: 0,    # L cone missing
-            ColorBlindType.DEUTERANOPIA: 1,  # M cone missing
-            ColorBlindType.TRITANOPIA: 2,    # S cone missing
-        }
- 
         category_names = list(self.categories.keys())
- 
-        # We need to assign a color to each category such that
-        # every pair is confusing for all active CB types
-        # Strategy: pick a base color, generate confusion partner,
-        # verify delta_E < threshold for all CB types
- 
-        # Assign first category a random base color
-        for attempt in range(max_retries):
-            print(f"Attempt {attempt}")  # add this
-            # Generate random base color
-            r = random.randint(30, 225)
-            g = random.randint(30, 225)
-            b = random.randint(30, 225)
-            base_hex = rgb_to_hex(r, g, b)
- 
-            # Generate confusion partner for each subsequent category
-            # using the first active CB type's cone
-            rgb_norm = np.array([r, g, b]) / 255.0
-            lms = RGB_TO_LMS @ rgb_norm
- 
-            valid_partners = [base_hex]
-            all_valid = True
- 
-            cone_idx = cb_cone_index[cb_types[0]]
- 
-            for i in range(1, len(category_names)):
-                # Shift by i * l_shift from the base so each partner is a
-                # distinct point on the same confusion line. Try both directions.
-                partner_hex = None
-                for sign in (1, -1):
-                    lms_partner = lms.copy()
-                    lms_partner[cone_idx] += sign * i * l_shift
-                    rgb_partner = LMS_TO_RGB @ lms_partner
- 
-                    if np.any((rgb_partner < 0) | (rgb_partner > 1)):
-                        continue  # out of gamut, try other sign
- 
-                    candidate = rgb_to_hex(*(rgb_partner * 255).astype(int))
- 
-                    # Verify delta_E < threshold for ALL active CB types vs base
-                    if all(compute_delta_e(base_hex, candidate, cb_type) < threshold
-                           for cb_type in cb_types):
-                        partner_hex = candidate
+        cb_types = self.colorblind_types
+
+        for _ in range(3000):
+
+            base = np.array([
+                random.randint(60, 200),
+                random.randint(60, 200),
+                random.randint(60, 200)
+            ])
+
+            colors = [base]
+
+            for _ in range(1, len(category_names)):
+                found = False
+
+                for _ in range(300):
+                    candidate = np.clip(base + np.random.uniform(-50, 50, 3), 0, 255)
+
+                    if all(
+                        self._color_distance(
+                            self._simulate_cb(base, cb),
+                            self._simulate_cb(candidate, cb)
+                        ) < 35
+                        for cb in cb_types
+                    ):
+                        colors.append(candidate)
+                        found = True
                         break
- 
-                if partner_hex is None:
-                    all_valid = False
+
+                if not found:
                     break
- 
-                valid_partners.append(partner_hex)
- 
-            if all_valid and len(valid_partners) == len(category_names):
-                # Assign colors to categories
-                print(f"Found valid pair at attempt {attempt}")  # add this
+
+            if len(colors) == len(category_names):
                 for i, name in enumerate(category_names):
                     self.categories[name] = self.categories[name].model_copy(
-                        update={"hex": valid_partners[i]}
+                        update={"hex": rgb_to_hex(*colors[i].astype(int))}
                     )
                 return
- 
-        raise ValueError(
-            f"Could not find valid broken color pairs after {max_retries} attempts. "
-            f"Try increasing max_retries or adjusting l_shift."
-        )
+
+        raise ValueError("Failed to generate CB-confusing colors")
 
     def _render_scatter_plot(self, ):   # return an image
         # a 16x10 inch figure at matplotlib's default DPI (100) gives a 
@@ -283,9 +237,17 @@ class CBAEnvironment(Environment):
         return img_b64.decode('utf-8')
 
 
+<<<<<<< HEAD
     def reset(self, task: Optional[str] = None, cb_types: Optional[List[str]] = None) -> CBAObservation:
+=======
+    def reset(self, task: str = "easy") -> CBAObservation:
+>>>>>>> 04b891dc56c9109712d241495d7bc229c9e302e2
         """
         Reset the environment.
+
+        Args:
+        task: Difficulty level - 'easy', 'medium', or 'hard'.
+              If None, keeps the current task set during __init__.
 
         reset()
         → generate categories        → stored in self.categories
@@ -299,9 +261,17 @@ class CBAEnvironment(Environment):
             CBAObservation with initial game state
         """
         if task is not None:
+<<<<<<< HEAD
             assert task in ['easy', 'medium', 'hard'], "task value must be from ['easy', 'medium', 'hard']"
             self.task = task
             self.task_config = TASK_CONFIGS[self.task]
+=======
+            assert task in ['easy', 'medium', 'hard'], "task must be 'easy', 'medium', or 'hard'"
+            self.task = task
+        
+        self.task_config = TASK_CONFIGS[self.task]  # set task_config based on the finalized task
+
+>>>>>>> 04b891dc56c9109712d241495d7bc229c9e302e2
         self.steps_taken = 0
         self.is_done = False
         self.is_solved = False

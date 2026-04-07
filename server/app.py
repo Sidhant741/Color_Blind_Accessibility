@@ -53,10 +53,10 @@ except ImportError as e:
     from server.environment import CBAEnvironment
 
 # Get configuration from environment variables
-task = os.getenv("CBA_TASK", "easy")
+# task = os.getenv("CBA_TASK", "easy") # We will set task in reset() instead of here, to allow dynamic task selection per episode
 
 def create_cba_environment():
-    return CBAEnvironment(task=task)
+    return CBAEnvironment()
 
 import gradio as gr
 import json

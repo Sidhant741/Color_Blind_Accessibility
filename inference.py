@@ -162,7 +162,7 @@ def get_model_message(client: OpenAI, prompt: str) -> str:
 async def main() -> None:
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     
-    env = CBAEnv(base_url="ws://localhost:8000")
+    env = CBAEnv(base_url="ws://localhost:7860")
     await env.connect()
     #env = await MyEnvV4Env.from_docker_image(IMAGE_NAME)
 
@@ -175,7 +175,7 @@ async def main() -> None:
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        result = await env.reset() # OpenENV.reset()
+        result = await env.reset(task=TASK_NAME) # OpenENV.reset()
         # last_echoed = result.observation.echoed_message
         last_obs = result.observation
 
