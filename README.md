@@ -6,13 +6,23 @@ base_path: /web
 tags:
   - openenv
 ---
-# Color_Blind_Accessibility
+# Color_Blind_Accessibility OpenEnv Environement
 
 ## Project Overview
 
 This document captures the full discussion about building a Color Blind Accessibility OpenEnv environment — a reinforcement learning environment that trains an AI agent to fix scatter plot data for the color blind users
 
-### Types of Color Blindness Supported
+## What It Does
+
+Colorblind users often cannot distinguish certain colors in data visualizations. 
+This environment provides a benchmark where an AI agent can learn to fix scatter plots for colorblind users.
+
+1. **Generates** a scatter plot with colors that are indistinguishable for colorblind users
+2. **Simulates** how a colorblind person actually perceives those colors
+3. **Exposes actions** for an agent to fix the plot — by recoloring or reshaping data points
+4. **Rewards** the agent based on how distinguishable the fixed plot is for colorblind users
+
+## Supported Colorblindness Types
 
 | Type          | Description                       |
 |---------------|-----------------------------------|
@@ -20,6 +30,46 @@ This document captures the full discussion about building a Color Blind Accessib
 | Protanopia    | Red appears very dark or black    |
 | Tritanopia    | Blue and yellow are confused      |
 
+## Difficulty Levels
+
+| Level | Categories | CB Types | Budget |
+|-------|-----------|----------|--------|
+| Easy | 2 colors | 1 type | None |
+| Medium | 5 colors | 2 types | Soft |
+| Hard | 10 colors | 3 types | Strict |
+
+## Agent Actions
+
+The agent can take two types of actions per step:
+
+- **Recolor** — change a category's color to a colorblind-safe palette
+- **Reshape** — change a category's marker shape (o, ^, *, x, +, p, s)
+
+## Quick Start
+
+### Run with Docker
+```bash
+docker run -p 7860:7860 -e CBA_TASK=easy 
+```
+
+### Run Inference
+```bash
+export API_KEY="your_api_key"
+export API_BASE_URL="https://api.groq.com/openai/v1"
+export MODEL_NAME="llama-3.3-70b-versatile"
+python inference.py
+```
+
+## Scoring
+
+The agent is scored using perceptual color difference (delta_E) as seen by a colorblind user:
+
+- `delta_E = 0` → colors look identical (bad)
+- `delta_E = 40+` → colors clearly different (good)
+
+Final score is normalized to `[0, 1]`.
+
+<!-- 
 ## Some Concepts : Tasks and Graders
 
 Tasks : It is the specific problem the agent is asked to solve in a single episode. It defines:
@@ -28,14 +78,6 @@ Tasks : It is the specific problem the agent is asked to solve in a single episo
 * What actions are available to the agent
 
 Grader : It is a function that evaluates how well the agent solved the task. It returns a score between 0.0 and 1.0, with partial credit for partial progress.
-
-### Difficulty Tiers - Overview
-
-| Level   | Task                                                                      | Grader Checks                           |
-|---------|---------------------------------------------------------------------------|-----------------------------------------|
-| Easy    | Fix a scatter plot with 2 similar color, one CB types, no budget          | Are points now distinguishable?         |
-| Medium  | Fix a scatter plot with 5 similar color, two CB types, soft budget        | CIEDE2000 Acceptable                    |
-| Hard    | Fix a scatter plot with 10 similar color, three CB types, strict budget   | CIEDE2000 Acceptable with minimum steps |
 
 ## Detailed Task Design
 
@@ -361,3 +403,5 @@ Once trained, this agent becomes a browser extension that:
 - [ ] Additional Endpoints to Expose
 - [ ] Move the hardcoded value to config (Optional)
 - [ ] Better logic in _assign_broken_colors()
+
+-->

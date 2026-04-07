@@ -70,18 +70,15 @@ class CBAEnvironment(Environment):
     """
     """
     SUPPORTS_CONCURRENT_SESSIONS = True
-    def __init__(self, task="easy"):
+    def __init__(self,):
         super().__init__()
 
         """
         Initialize the CBA Environment
         """
-
-        assert task in ['easy', 'medium', 'hard'], "task value must be from ['easy', 'medium', 'hard']"
-
-        self.task = task
+        self.task = "easy"  # default task is easy, can be overridden by reset() argument or env variable
         
-        self.task_config = TASK_CONFIGS[self.task]
+        # self.task_config = TASK_CONFIGS[self.task]  # this will be set in reset() when task is finalized
 
         self._state = None
 
@@ -283,9 +280,13 @@ class CBAEnvironment(Environment):
         return img_b64.decode('utf-8')
 
 
-    def reset(self) -> CBAObservation:
+    def reset(self, task: str = "easy") -> CBAObservation:
         """
         Reset the environment.
+
+        Args:
+        task: Difficulty level - 'easy', 'medium', or 'hard'.
+              If None, keeps the current task set during __init__.
 
         reset()
         → generate categories        → stored in self.categories
@@ -298,6 +299,12 @@ class CBAEnvironment(Environment):
         Returns:
             CBAObservation with initial game state
         """
+        if task is not None:
+            assert task in ['easy', 'medium', 'hard'], "task must be 'easy', 'medium', or 'hard'"
+            self.task = task
+        
+        self.task_config = TASK_CONFIGS[self.task]  # set task_config based on the finalized task
+
         self.steps_taken = 0
         self.is_done = False
         self.is_solved = False

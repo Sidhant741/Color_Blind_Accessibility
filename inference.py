@@ -175,7 +175,7 @@ async def main() -> None:
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        result = await env.reset() # OpenENV.reset()
+        result = await env.reset(task=TASK_NAME) # OpenENV.reset()
         # last_echoed = result.observation.echoed_message
         last_obs = result.observation
 
