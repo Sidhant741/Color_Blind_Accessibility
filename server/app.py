@@ -64,6 +64,7 @@ import base64
 import io
 from PIL import Image
 import numpy as np
+from openenv.core.env_server.serialization import serialize_observation
 
 def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, quick_start_md):
     import openenv.core.env_server.gradio_ui as gradio_ui
@@ -71,6 +72,7 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
     display_title = gradio_ui.get_gradio_display_title(metadata, fallback=title)
     
     with gr.Blocks(title=display_title) as demo:
+        env_state = gr.State()
         with gr.Row():
             with gr.Column(scale=1, elem_classes="col-left"):
                 if quick_start_md:
@@ -210,7 +212,10 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
                 c["observation"]["scatter_plot"] = "<base64 image hidden for clarity>"
             return json.dumps(c, indent=2)
 
-        async def do_reset(mode, cb_easy, cb_medium):
+        async def do_reset(mode, cb_easy, cb_medium, current_env):
+            if current_env is None:
+                current_env = create_cba_environment()
+                
             cb_mapping = {
                 "deutronopia": "deuteranopia",
                 "protanopia": "protanopia",
@@ -226,31 +231,46 @@ def build_gradio_app(web_manager, action_fields, metadata, is_chat_env, title, q
                 cb_types = [cb_mapping.get(p.strip(), p.strip()) for p in parts]
             
             try:
-                data = await web_manager.reset_environment(task=mode, cb_types=cb_types)
-                return extract_img(data), clean_json(data), f"Environment reset to {mode} mode with {cb_types} successfully."
+                observation = current_env.reset(task=mode, cb_types=cb_types)
+                data = serialize_observation(observation)
+                return extract_img(data), clean_json(data), f"Environment reset to {mode} mode with {cb_types} successfully.", current_env
             except Exception as e:
-                return None, "", f"Error: {e}"
+                import traceback
+                traceback.print_exc()
+                return None, "", f"Error: {e}", current_env
                 
-        async def do_step(*args):
+        async def do_step(current_env, *args):
+            if current_env is None:
+                return None, "", "Error: Environment not initialized. Click Reset first.", None
+
             try:
                 action_data = {}
                 for field, val in zip(action_fields, args):
                     if val is not None and val != "":
                         action_data[field["name"]] = val
-                data = await web_manager.step_environment(action_data)
-                return extract_img(data), clean_json(data), "Step complete."
+                
+                from openenv.core.env_server.serialization import deserialize_action
+                action = deserialize_action(action_data, CBAAction)
+                observation = current_env.step(action)
+                data = serialize_observation(observation)
+                
+                return extract_img(data), clean_json(data), "Step complete.", current_env
             except Exception as e:
-                return None, "", f"Error: {e}"
+                import traceback
+                traceback.print_exc()
+                return None, "", f"Error: {e}", current_env
 
-        def get_state_sync():
+        def get_state_sync(current_env):
+            if current_env is None:
+                return "Error: Environment not initialized."
             try:
-                return clean_json(web_manager.get_state())
+                return clean_json({"state": current_env.state.model_dump()})
             except Exception as e:
                 return f"Error: {e}"
 
-        reset_btn.click(do_reset, inputs=[mode_radio, cb_type_easy, cb_type_medium], outputs=[img_display, raw_json, status])
-        step_btn.click(do_step, inputs=step_inputs, outputs=[img_display, raw_json, status])
-        state_btn.click(get_state_sync, outputs=[raw_json])
+        reset_btn.click(do_reset, inputs=[mode_radio, cb_type_easy, cb_type_medium, env_state], outputs=[img_display, raw_json, status, env_state])
+        step_btn.click(do_step, inputs=[env_state] + step_inputs, outputs=[img_display, raw_json, status, env_state])
+        state_btn.click(get_state_sync, inputs=[env_state], outputs=[raw_json])
         
     return demo
 

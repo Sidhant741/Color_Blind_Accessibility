@@ -171,13 +171,9 @@ class CBAEnvironment(Environment):
 
         raise ValueError("Failed to generate CB-confusing colors")
 
-    def _render_scatter_plot(self, ):   # return an image
-        # a 16x10 inch figure at matplotlib's default DPI (100) gives a 
-        # 1000x1600x3 image = 4.8 million integers being sent as JSON. 
-        # That's why the browser is struggling to display it.
-        
-        # fig = plt.figure(figsize=(16, 10))        # A heavy computation bug
-        fig = plt.figure(figsize=(8, 6), dpi=72)  # default is 100
+    def _render_scatter_plot(self):
+        """Render the scatter plot using the object-oriented Matplotlib API for thread-safety."""
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=72)
 
         for label_name, value_ in self.categories.items():
             hex_code = value_.hex
@@ -185,21 +181,17 @@ class CBAEnvironment(Environment):
             points = value_.points
 
             points_np = np.array(points)
+            ax.scatter(points_np[:, 0], points_np[:, 1], marker=shape_using, color=hex_code, label=label_name)
 
-            plt.scatter(points_np[:, 0], points_np[:, 1], marker=shape_using, color=hex_code, label=label_name)
-
-        plt.legend(loc="upper left", bbox_to_anchor=(1, 1), borderaxespad=0)
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.title("Color Blind Accessibility")
-        plt.tight_layout()
+        ax.legend(loc="upper left", bbox_to_anchor=(1, 1), borderaxespad=0)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_title("Color Blind Accessibility")
+        
+        fig.tight_layout()
         fig.canvas.draw()
-        # image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        # image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
-        # plt.close(fig)
-
-        # tostring_rgb was removed in newer matplotlib; buffer_rgba works on the Agg backend
+        # buffer_rgba works on the Agg backend
         buf = fig.canvas.buffer_rgba()
         image = np.frombuffer(buf, dtype=np.uint8).reshape(
             fig.canvas.get_width_height()[::-1] + (4,)
