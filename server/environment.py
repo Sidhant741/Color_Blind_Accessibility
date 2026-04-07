@@ -188,10 +188,11 @@ class CBAEnvironment(Environment):
 
             plt.scatter(points_np[:, 0], points_np[:, 1], marker=shape_using, color=hex_code, label=label_name)
 
-        plt.legend()
+        plt.legend(loc="upper left", bbox_to_anchor=(1, 1), borderaxespad=0)
         plt.xlabel("X")
         plt.ylabel("Y")
         plt.title("Color Blind Accessibility")
+        plt.tight_layout()
         fig.canvas.draw()
         # image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
         # image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))

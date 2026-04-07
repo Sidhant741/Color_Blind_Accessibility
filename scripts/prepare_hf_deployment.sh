@@ -392,7 +392,7 @@ strip_stage_artifacts() {
         -prune -exec rm -rf {} +
 
     find "$stage_dir" -type f \
-        \( -name '.DS_Store' -o -name '*.pyc' -o -name '*.pyo' -o -name 'uv.lock' \) \
+        \( -name '.DS_Store' -o -name '*.pyc' -o -name '*.pyo' \) \
         -delete
 }
 
@@ -640,7 +640,7 @@ README_EOF
 ---
 title: ${env_name} Environment
 sdk: docker
-app_port: 8000
+app_port: 7860
 base_path: /web
 tags:
   - $HUB_TAG
