@@ -8,8 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from openenv.core.env_server import create_app
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import CBAAction, CBAObservation
-from .environment import CBAEnvironment
+from environment import CBAEnvironment
 
 
 # ---------------------------------
@@ -52,7 +55,7 @@ app = create_app(
     CBAAction,
     CBAObservation,
     env_name="cba_env_v1",
-    max_concurrent_envs=10
+    max_concurrent_envs=1
 )
 
 

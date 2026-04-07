@@ -1,144 +1,468 @@
-import random
-import numpy as np
+"""
+Color Blind Accessibility Environment
+
+# Methods to write
+DONE 1. __init__
+DONE 2. reset
+DONE 3. step
+DONE 4. _generate_categories
+DONE 5. _assign_broken_colors
+DONE 6. _render_scatter_plot
+DONE 7. _build_observation
+DONE 8. _compute_reward
+DONE 9. _check_done
+"""
+
+
+from typing import Any
+
 from uuid import uuid4
 
-from openenv.core.env_server import Environment
-from models import State, Category, ColorBlindType
-from .utils import compute_delta_e, hex_to_rgb, rgb_to_hex
-from .config import TASK_CONFIGS
+import numpy as np
+import random
+import matplotlib
+from itertools import combinations
+import copy
+import base64
+from PIL import Image
+import io
 
+matplotlib.use('Agg')  # Use non-interactive backend — required for tostring_rgb / buffer_rgba
+import matplotlib.pyplot as plt
+
+# # Support both in-repo and standalone imports
+# try:
+#     # In-repo imports (when running from OpenEnv repository)
+#     from core.env_server.interfaces import Environment
+#     from core.env_server.types import State
+
+#     from ..models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
+#     from .config import *
+#     from .utils import compute_delta_e, rgb_to_hex
+
+# except ImportError:
+#     from models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
+#     from config import *
+#     from utils import compute_delta_e, rgb_to_hex
+
+#     try:
+#         # Standalone imports with the current openenv package namespace
+#         from openenv.core.env_server.interfaces import Environment
+#         from openenv.core.env_server.types import State
+#     except ImportError:
+#         # Backward-compatible standalone imports with the legacy namespace
+#         from openenv_core.env_server.interfaces import Environment
+#         from openenv_core.env_server.types import State
+
+from openenv.core.env_server import Environment
+
+try:
+    from ..models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
+    from .config import *
+    from .utils import compute_delta_e, rgb_to_hex
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
+    from models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
+    from server.config import *  # type: ignore
+    from server.utils import compute_delta_e, rgb_to_hex  # type: ignore
 
 class CBAEnvironment(Environment):
-    SUPPORTS_CONCURRENT_SESSIONS = True
+    """
+    """
 
-    def __init__(self, task="easy"):
+    def __init__(self, task="easy", cb_types=None):
         super().__init__()
-        self.config = TASK_CONFIGS[task]
+
+        assert task in ['easy', 'medium', 'hard']
+
+        self.task = task
+        self.task_config = TASK_CONFIGS[self.task]
+
+        self.custom_cb_types = cb_types  # 🔥 NEW
+
         self._state = None
-        self.reset()
+        self.categories = None
+        self.colorblind_types = None
+
+        self.current_image = None
+        self.delta_E_matrix = {}
+        self.steps_taken = 0
+        self.is_done = False
+        self.is_solved = False
+        self.fixes_applied = []
 
     @property
     def state(self):
         return self._state
+    
+    def _get_mode_and_categories(self, cb_types):
+        n = len(cb_types)
 
-    @state.setter
-    def state(self, value):
-        self._state = value
+        if n == 1:
+            return "easy", 2
+        elif n == 2:
+            return "medium", 5
+        elif n == 3:
+            return "hard", 10
+        else:
+            raise ValueError("Only 1–3 CB types allowed")
+   
+    
+    def _generate_categories(self):
+        n_points = self.task_config['n_points']
 
-    def reset(self):
-        self._state = State(
-            categories={
-                f"C{i}": Category(
-                    hex=self.random_hex(),
-                    points=[(random.random(), random.random()) for _ in range(self.config["n_points"])]
-                )
-                for i in range(self.config["n_categories"])
-            },
-            colorblind_types=[ColorBlindType.DEUTERANOPIA],
+        categories = {}
+        for i in range(self.task_config['n_categories']):
+            label_name = "Class " + chr(65+i)
+
+            points_defined = [(random.random(), random.random()) for _ in range(n_points)]
+
+            categories[label_name] = Category(
+                hex="#FFFFFF",
+                shape=Shape.CIRCLE,
+                points=points_defined
+            )
+
+        return categories
+
+    def _simulate_cb(self, rgb, cb_type):
+        rgb = rgb / 255.0
+
+        if cb_type == ColorBlindType.PROTANOPIA:
+            matrix = np.array([
+                [0.567, 0.433, 0],
+                [0.558, 0.442, 0],
+                [0, 0.242, 0.758]
+            ])
+        elif cb_type == ColorBlindType.DEUTERANOPIA:
+            matrix = np.array([
+                [0.625, 0.375, 0],
+                [0.7, 0.3, 0],
+                [0, 0.3, 0.7]
+            ])
+        else:
+            matrix = np.array([
+                [0.95, 0.05, 0],
+                [0, 0.433, 0.567],
+                [0, 0.475, 0.525]
+            ])
+
+        cb_rgb = matrix @ rgb
+        return np.clip(cb_rgb, 0, 1) * 255
+
+    def _color_distance(self, c1, c2):
+        return np.linalg.norm(c1 - c2)
+
+    
+    def _assign_broken_colors(self):
+        category_names = list(self.categories.keys())
+        cb_types = self.colorblind_types
+
+        for _ in range(3000):
+
+            base = np.array([
+                random.randint(60, 200),
+                random.randint(60, 200),
+                random.randint(60, 200)
+            ])
+
+            colors = [base]
+
+            for _ in range(1, len(category_names)):
+                found = False
+
+                for _ in range(300):
+                    candidate = np.clip(base + np.random.uniform(-50, 50, 3), 0, 255)
+
+                    if all(
+                        self._color_distance(
+                            self._simulate_cb(base, cb),
+                            self._simulate_cb(candidate, cb)
+                        ) < 35
+                        for cb in cb_types
+                    ):
+                        colors.append(candidate)
+                        found = True
+                        break
+
+                if not found:
+                    break
+
+            if len(colors) == len(category_names):
+                for i, name in enumerate(category_names):
+                    self.categories[name] = self.categories[name].model_copy(
+                        update={"hex": rgb_to_hex(*colors[i].astype(int))}
+                    )
+                return
+
+        raise ValueError("Failed to generate CB-confusing colors")
+
+
+    def _render_scatter_plot(self):
+        fig = plt.figure(figsize=(8, 6), dpi=72)
+
+        for label, cat in self.categories.items():
+            pts = np.array(cat.points)
+
+            rgb = np.array([int(cat.hex[i:i+2], 16) for i in (1,3,5)])
+            cb_rgb = self._simulate_cb(rgb, self.colorblind_types[0])
+
+            plt.scatter(
+                pts[:, 0],
+                pts[:, 1],
+                color=cb_rgb / 255,
+                label=label
+            )
+
+        plt.legend()
+        fig.canvas.draw()
+
+        buf = fig.canvas.buffer_rgba()
+        image = np.frombuffer(buf, dtype=np.uint8).reshape(
+            fig.canvas.get_width_height()[::-1] + (4,)
+        )
+        image = image[:, :, :3]
+
+        plt.close(fig)
+        return image
+
+      
+
+
+    def _build_observation(self):
+        return CBAObservation(
+            scatter_plot=self._state.scatter_plot,
+            scatter_plot_shape=self._state.scatter_plot_shape,
+            hex_code_per_category={k: v.hex for k, v in self.categories.items()},
+            shape_per_category={k: v.shape for k, v in self.categories.items()},
+            colorblind_types=self.colorblind_types,
+            step_count=self._state.step_count,
+            max_steps=self._state.max_steps,
+            is_done=self.is_done
+        )
+    
+    def _encode_image(self, image):
+        img = Image.fromarray(image)
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        return base64.b64encode(buf.getvalue()).decode()
+
+
+    def reset(self)-> CBAObservation:
+        """
+        Reset the environment.
+
+        reset()
+        → generate categories        → stored in self.categories
+        → assign broken colors       → stored in self.categories
+        → render scatter plot        → stored in self.current_image
+        → build state                → stored in self.state (full truth)
+        → build observation          → derived from self.state
+        → return observation         → this is what agent receives
+
+        Returns:
+            CBAObservation with initial game state
+        """
+        self.steps_taken = 0
+        self.is_done = False
+        self.is_solved = False
+        self.fixes_applied = []
+        self.delta_E_matrix = {}
+
+        # 🔥 CB TYPE HANDLING
+        if self.custom_cb_types:
+            self.colorblind_types = [ColorBlindType[cb.upper()] for cb in self.custom_cb_types]
+
+            self.task, n_categories = self._get_mode_and_categories(self.custom_cb_types)
+
+            self.task_config = TASK_CONFIGS[self.task].copy()
+            self.task_config["n_categories"] = n_categories
+
+            print(f"Mode: {self.task} | Categories: {n_categories}")
+
+        else:
+            self.colorblind_types = random.sample(
+                list(ColorBlindType),
+                self.task_config["no_of_cb_types"]
+            )
+
+        self.categories = self._generate_categories()
+        self._assign_broken_colors()
+        self._compute_delta_e_matrix()
+
+        self.current_image = self._render_scatter_plot()
+
+        self._state = CBAState(
+            episode_id=str(uuid4()),
             step_count=0,
-            max_steps=self.config["max_steps"]
+            scatter_plot=self._encode_image(self.current_image),
+            scatter_plot_shape=list(self.current_image.shape),
+            categories=self.categories,
+            colorblind_types=self.colorblind_types,
+            max_steps=self.task_config['max_steps'],
+            fixes_applied=self.fixes_applied,
+            delta_E_matrix=self.delta_E_matrix,
+            is_solved=False
         )
 
         return self._build_observation()
 
-    def _build_observation(self):
-        # For gym/internal use, return numpy. For server, return CBAObservation.
-        # This is a bit of a hack to support both.
-        from models import CBAObservation
+
+
+    
+    def _compute_delta_e_matrix(self):  # returns nothing
+        pairs = list(combinations(self.categories.keys(), 2))   # pairs = [("Class A", "Class B"), ("Class A", "Class C"), ...]
+
+        for cat_i, cat_j in pairs:
+            for_each_cb_delta_value = {}
+            hex_i, hex_j = self.categories[cat_i].hex, self.categories[cat_j].hex
+
+            for cb_type in self.colorblind_types:
+                delta = compute_delta_e(hex_i, hex_j, cb_type)
+                for_each_cb_delta_value[cb_type.value] = delta
+
+            # self.delta_E_matrix[(cat_i, cat_j)] = for_each_cb_delta_value
+            self.delta_E_matrix[f"{cat_i}|{cat_j}"] = for_each_cb_delta_value
+    
+    def _check_done(self):
+        is_solved_lst = []
+
+        if not self.delta_E_matrix:
+            self.is_solved = False
+            self.is_done = False
+            return
         
-        hex_map = {k: v.hex for k, v in self._state.categories.items()}
+        for pair in self.delta_E_matrix:
+            for value in self.delta_E_matrix[pair].values():
+                if value < self.task_config['delta_E_threshold']:
+                    is_solved_lst.append(False)
+                else:
+                    is_solved_lst.append(True)
         
-        return CBAObservation(
-            vector=self._get_obs().tolist(),
-            hex_code_per_category=hex_map,
-            colorblind_types=self._state.colorblind_types,
-            is_done=self._state.done,
-            reward=self._state.reward
-        )
-
-    def random_hex(self):
-        return "#{:06x}".format(random.randint(0, 0xFFFFFF))
-
-    # 🔥 APPLY CONTINUOUS ACTION
-    def apply_action(self, action):
-        keys = list(self.state.categories.keys())
-
-        target_idx = int(np.clip(action[0], 0, len(keys)-1))
-        target = keys[target_idx]
-
-        delta = action[1:]  # ΔR, ΔG, ΔB
-
-        r, g, b = hex_to_rgb(self.state.categories[target].hex)
-
-        # normalize to [0,1]
-        r /= 255
-        g /= 255
-        b /= 255
-
-        # apply delta
-        r = np.clip(r + delta[0], 0, 1)
-        g = np.clip(g + delta[1], 0, 1)
-        b = np.clip(b + delta[2], 0, 1)
-
-        # back to 0–255
-        r, g, b = int(r*255), int(g*255), int(b*255)
-
-        self.state.categories[target].hex = rgb_to_hex(r, g, b)
-
-    def step(self, action):
-        from models import CBAAction
+        self.is_solved = all(is_solved_lst)
         
-        if isinstance(action, CBAAction):
-            if action.continuous_action:
-                self.apply_action(action.continuous_action)
-            else:
-                # Handle old discrete actions if necessary
-                pass
+        if self.task == "easy":
+            self.is_done = self.is_solved
         else:
-            # Assume it's a raw numpy array from gym
-            self.apply_action(action)
+            self.is_done = self.is_solved or self.steps_taken >= self.task_config['max_steps']
+            
+    def _compute_reward(self, action, previous_delta_E_matrix):
 
-        reward = self.compute_reward()
-        self._state.reward = reward
-        self._state.step_count += 1
+        total_score = 0
+        color_weight = self.task_config['color_weight']
+        shape_weight = self.task_config['shape_weight']
+        core_reward = 0
+        penalty = 0
+        bonus = 0
 
-        done = reward > 0.95 or self._state.step_count >= self._state.max_steps
-        self._state.done = done
+        for pair in self.delta_E_matrix:
+            shape_score, color_score = 0, 0
+            cat_i, cat_j = pair.split("|")
+            
+            shape_i, shape_j = self.categories[cat_i].shape, self.categories[cat_j].shape
+            if shape_i != shape_j:
+                shape_score = 1
+            
+            for value in self.delta_E_matrix[pair].values():
+                color_score += value
+            
+            avg_color_score = color_score / len(self.colorblind_types)
+            norm_color_score = min(avg_color_score / 40.0, 1.0)
 
-        obs = self._build_observation()
-        # Gym expects (obs, reward, done, info) or (obs, reward, terminated, truncated, info)
-        # But server expects Observation object.
-        # We'll return based on context or just return both and let gym_wrapper handle it.
-        return obs
+            pair_reward = color_weight * norm_color_score + shape_weight * shape_score 
 
-    # 🔥 STRONGER REWARD (MIN DISTANCE)
-    def compute_reward(self):
-        keys = list(self.state.categories.keys())
-        threshold = self.config["delta_E_threshold"]
+            total_score += pair_reward
 
-        min_delta = float("inf")
+        core_reward = total_score / len(self.delta_E_matrix)    
 
-        for i in range(len(keys)):
-            for j in range(i+1, len(keys)):
+        if self.task == "hard" and core_reward >= 0.8:
+            bonus = (1 - self.steps_taken / self.task_config['max_steps']) * self.task_config['efficiency_weight']
+        if self.task == "medium" and self.steps_taken > self.task_config['max_steps']:
+            steps_over = self.steps_taken - self.task_config['max_steps']
+            penalty -= 0.02 * steps_over
 
-                c1 = self.state.categories[keys[i]].hex
-                c2 = self.state.categories[keys[j]].hex
+        ## Redundant Action Penalty ##
+        previous_core = 0
+        already_solved = False
+        if previous_delta_E_matrix is not None:
+            target = action.target
+            threshold = self.task_config['delta_E_threshold']
 
-                for cb in self.state.colorblind_types:
-                    delta = compute_delta_e(c1, c2, cb.value)
-                    min_delta = min(min_delta, delta)
+            # find all pairs involving the target category
+            target_pairs = [pair for pair in previous_delta_E_matrix if target in pair]
 
-        # normalize
-        reward = min(min_delta / threshold, 1.0)
+            # check if ALL those pairs were already well distinguished
+            already_solved = all(
+                delta >= threshold
+                for pair in target_pairs
+                for delta in previous_delta_E_matrix[pair].values()
+            )
 
-        # 🔥 strong penalty if below threshold
-        if min_delta < threshold:
-            reward -= 0.5
+            previous_total = 0
+            for pair in previous_delta_E_matrix:
+                prev_color_score = sum(previous_delta_E_matrix[pair].values()) / len(self.colorblind_types)
+                prev_norm = min(prev_color_score / 40.0, 1.0)
+                previous_total += prev_norm
+            previous_core = previous_total / len(previous_delta_E_matrix)
 
-        return max(0.0, reward)
+        if already_solved:
+            penalty -= 0.05
 
-    def _get_obs(self):
-        return np.array([
-            int(cat.hex[1:], 16) / 0xFFFFFF
-            for cat in self.state.categories.values()
-        ], dtype=np.float32)
+        if core_reward < previous_core:
+            penalty -= 0.1 * (previous_core - core_reward)
+
+        ### Final Score ###
+        total_reward = core_reward + bonus + penalty
+        return max(0.0, min(1.0, total_reward))
+
+    def step(self, action:CBAAction):
+
+        if self.is_done :
+            raise RuntimeError("Episode is already done. Call reset() to start a new episode.")
+
+        if action.target not in self.categories:
+            raise ValueError(f"Target category '{action.target}' does not exist")
+
+        previous_delta_E_matrix = copy.deepcopy(self.delta_E_matrix) if self.delta_E_matrix else None
+        fix_str = ""
+
+        if action.fix_type == FixType.RECOLOR:
+            self.categories[action.target] = self.categories[action.target].model_copy(
+                                                update={"hex": action.change_hex}
+                                            )
+
+            fix_str = f"{action.fix_type} {action.target} → {action.change_hex}"
+        else:
+            self.categories[action.target] = self.categories[action.target].model_copy(
+                                                update={"shape": action.change_shape}
+                                            )
+            fix_str = f"{action.fix_type} {action.target} → {action.change_shape}"
+
+        self.steps_taken += 1
+
+        self.current_image = self._render_scatter_plot()
+
+        self._compute_delta_e_matrix()
+
+        reward = self._compute_reward(action, previous_delta_E_matrix)
+
+        self._check_done()
+
+        self.fixes_applied.append(fix_str)
+
+        self._state.step_count = self.steps_taken
+        # self._state.scatter_plot = self.current_image
+        self._state.scatter_plot = self._encode_image(self.current_image)
+        self._state.scatter_plot_shape = list(self.current_image.shape)
+        self._state.categories = self.categories
+        self._state.fixes_applied = self.fixes_applied
+        self._state.delta_E_matrix = self.delta_E_matrix
+        self._state.is_solved = self.is_solved
+
+        observation = self._build_observation()
+        observation.reward = reward
+        observation.done = self.is_done
+        
+        # return self._build_observation(), reward, self.is_done, {}
+        return observation
