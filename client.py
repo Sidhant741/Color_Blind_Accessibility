@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, TYPE_CHECKING
 from openenv.core.client_types import StepResult
 from openenv.core.env_client import EnvClient
-from .models import CBAAction, CBAObservation, CBAState
+from models import CBAAction, CBAObservation, CBAState
 
 class CBAEnv(EnvClient[CBAAction, CBAObservation, CBAState]):
 
