@@ -238,7 +238,7 @@ class CBAEnvironment(Environment):
 
 
 
-    def reset(self, task: str = "easy") -> CBAObservation:
+    def reset(self, task: str = "easy", cb_types: list = None) -> CBAObservation:
         """
         Reset the environment.
 
@@ -261,9 +261,6 @@ class CBAEnvironment(Environment):
             assert task in ['easy', 'medium', 'hard'], "task value must be from ['easy', 'medium', 'hard']"
             self.task = task
             self.task_config = TASK_CONFIGS[self.task]
-            self.task = task
-        
-        self.task_config = TASK_CONFIGS[self.task]  # set task_config based on the finalized task
 
         self.steps_taken = 0
         self.is_done = False
