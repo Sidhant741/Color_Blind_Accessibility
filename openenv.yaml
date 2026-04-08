@@ -12,7 +12,7 @@ description: |
   distinguishable under deuteranopia, protanopia, and tritanopia.
 
 tasks:
-  - id: easy
+  - id: task_easy
     name: Fix color contrast
     description: >
       Fix a scatter plot with 2 color-confused categories for one colorblind type
@@ -23,7 +23,7 @@ tasks:
     grader:
       type: graders.easy:EasyGrader
 
-  - id: medium
+  - id: task_medium
     name: Handle overlapping colors
     description: >
       Fix a scatter plot with 5 similar colors affecting two colorblind types.
@@ -35,7 +35,7 @@ tasks:
     grader:
       type: graders.medium:MediumGrader
 
-  - id: hard
+  - id: task_hard
     name: Optimize full plot accessibility
     description: >
       Fix a scatter plot with 10 similar colors across three colorblind types.
