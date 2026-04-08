@@ -2,7 +2,7 @@ TASK_CONFIGS = {
     "easy" : {
         "n_categories" : 2,
         "no_of_cb_types" : 1,
-        "max_steps" : None,
+        "max_steps" : 50,
         "n_points" : 100,
         "color_weight" : 1.0,
         "shape_weight" : 0.0,
@@ -14,7 +14,7 @@ TASK_CONFIGS = {
     "medium" : {
         "n_categories" : 5,
         "no_of_cb_types" : 2,
-        "max_steps" : 20,
+        "max_steps" : 80,
         "n_points" : 100,
         "color_weight" : 0.8,
         "shape_weight" : 0.2,
@@ -26,7 +26,7 @@ TASK_CONFIGS = {
     "hard" : {
         "n_categories" : 10,
         "no_of_cb_types" : 3,
-        "max_steps" : 20,
+        "max_steps" : 100,
         "n_points" : 100,
         "color_weight" : 0.6,
         "shape_weight" : 0.4,

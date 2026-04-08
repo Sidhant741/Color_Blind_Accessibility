@@ -63,7 +63,7 @@ MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
 BENCHMARK = os.getenv("CBA_BENCHMARK", "colorblind_env")
-MAX_STEPS = 8
+MAX_STEPS = 200
 TEMPERATURE = 0.7
 MAX_TOKENS = 500
 SUCCESS_SCORE_THRESHOLD = 0.1
