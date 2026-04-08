@@ -30,6 +30,7 @@ matplotlib.use('Agg')  # Use non-interactive backend — required for tostring_r
 import matplotlib.pyplot as plt
 
 from openenv.core.env_server import Environment
+from graders import EasyGrader, MediumGrader, HardGrader
 
 try:
     from ..models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
@@ -41,6 +42,12 @@ except ImportError as e:
     from models import CBAAction, CBAObservation, CBAState, Shape, Category, ColorBlindType, FixType
     from server.config import *
     from server.utils import compute_delta_e, rgb_to_hex
+
+GRADERS = {
+    "easy": EasyGrader(),
+    "medium": MediumGrader(),
+    "hard": HardGrader(),
+}
 
 class CBAEnvironment(Environment):
     """
@@ -332,76 +339,87 @@ class CBAEnvironment(Environment):
         else:
             self.is_done = self.is_solved or self.steps_taken >= self.task_config['max_steps']
             
-    def _compute_reward(self, action, previous_delta_E_matrix):
+    # def _compute_reward(self, action, previous_delta_E_matrix):
 
-        total_score = 0
-        color_weight = self.task_config['color_weight']
-        shape_weight = self.task_config['shape_weight']
-        core_reward = 0
-        penalty = 0
-        bonus = 0
+    #     total_score = 0
+    #     color_weight = self.task_config['color_weight']
+    #     shape_weight = self.task_config['shape_weight']
+    #     core_reward = 0
+    #     penalty = 0
+    #     bonus = 0
 
-        for pair in self.delta_E_matrix:
-            shape_score, color_score = 0, 0
-            cat_i, cat_j = pair.split("|")
+    #     for pair in self.delta_E_matrix:
+    #         shape_score, color_score = 0, 0
+    #         cat_i, cat_j = pair.split("|")
             
-            shape_i, shape_j = self.categories[cat_i].shape, self.categories[cat_j].shape
-            if shape_i != shape_j:
-                shape_score = 1
+    #         shape_i, shape_j = self.categories[cat_i].shape, self.categories[cat_j].shape
+    #         if shape_i != shape_j:
+    #             shape_score = 1
             
-            for value in self.delta_E_matrix[pair].values():
-                color_score += value
+    #         for value in self.delta_E_matrix[pair].values():
+    #             color_score += value
             
-            avg_color_score = color_score / len(self.colorblind_types)
-            norm_color_score = min(avg_color_score / 40.0, 1.0)
+    #         avg_color_score = color_score / len(self.colorblind_types)
+    #         norm_color_score = min(avg_color_score / 40.0, 1.0)
 
-            pair_reward = color_weight * norm_color_score + shape_weight * shape_score 
+    #         pair_reward = color_weight * norm_color_score + shape_weight * shape_score 
 
-            total_score += pair_reward
+    #         total_score += pair_reward
 
-        core_reward = total_score / len(self.delta_E_matrix)    
+    #     core_reward = total_score / len(self.delta_E_matrix)    
 
-        if self.task == "hard" and core_reward >= 0.8:
-            bonus = (1 - self.steps_taken / self.task_config['max_steps']) * self.task_config['efficiency_weight']
-        if self.task == "medium" and self.steps_taken > self.task_config['max_steps']:
-            steps_over = self.steps_taken - self.task_config['max_steps']
-            penalty -= 0.02 * steps_over
+    #     if self.task == "hard" and core_reward >= 0.8:
+    #         bonus = (1 - self.steps_taken / self.task_config['max_steps']) * self.task_config['efficiency_weight']
+    #     if self.task == "medium" and self.steps_taken > self.task_config['max_steps']:
+    #         steps_over = self.steps_taken - self.task_config['max_steps']
+    #         penalty -= 0.02 * steps_over
 
-        ## Redundant Action Penalty ##
-        previous_core = 0
-        already_solved = False
-        if previous_delta_E_matrix is not None:
-            target = action.target
-            threshold = self.task_config['delta_E_threshold']
+    #     ## Redundant Action Penalty ##
+    #     previous_core = 0
+    #     already_solved = False
+    #     if previous_delta_E_matrix is not None:
+    #         target = action.target
+    #         threshold = self.task_config['delta_E_threshold']
 
-            # find all pairs involving the target category
-            target_pairs = [pair for pair in previous_delta_E_matrix if target in pair]
+    #         # find all pairs involving the target category
+    #         target_pairs = [pair for pair in previous_delta_E_matrix if target in pair]
 
-            # check if ALL those pairs were already well distinguished
-            already_solved = all(
-                delta >= threshold
-                for pair in target_pairs
-                for delta in previous_delta_E_matrix[pair].values()
-            )
+    #         # check if ALL those pairs were already well distinguished
+    #         already_solved = all(
+    #             delta >= threshold
+    #             for pair in target_pairs
+    #             for delta in previous_delta_E_matrix[pair].values()
+    #         )
 
-            previous_total = 0
-            for pair in previous_delta_E_matrix:
-                prev_color_score = sum(previous_delta_E_matrix[pair].values()) / len(self.colorblind_types)
-                prev_norm = min(prev_color_score / 40.0, 1.0)
-                previous_total += prev_norm
-            previous_core = previous_total / len(previous_delta_E_matrix)
+    #         previous_total = 0
+    #         for pair in previous_delta_E_matrix:
+    #             prev_color_score = sum(previous_delta_E_matrix[pair].values()) / len(self.colorblind_types)
+    #             prev_norm = min(prev_color_score / 40.0, 1.0)
+    #             previous_total += prev_norm
+    #         previous_core = previous_total / len(previous_delta_E_matrix)
 
-        if already_solved:
-            penalty -= 0.05
+    #     if already_solved:
+    #         penalty -= 0.05
 
-        if core_reward < previous_core:
-            penalty -= 0.1 * (previous_core - core_reward)
+    #     if core_reward < previous_core:
+    #         penalty -= 0.1 * (previous_core - core_reward)
 
-        ### Final Score ###
-        total_reward = core_reward + bonus + penalty
-        reward = min(max(total_reward, 0.001), 0.999)
+    #     ### Final Score ###
+    #     total_reward = core_reward + bonus + penalty
+    #     reward = min(max(total_reward, 0.001), 0.999)
 
-        return reward
+    #     return reward
+
+    def _compute_reward(self, action, previous_delta_E_matrix) -> float:
+        return GRADERS[self.task](
+            delta_E_matrix=self.delta_E_matrix,
+            categories=self.categories,
+            colorblind_types=self.colorblind_types,
+            steps_taken=self.steps_taken,
+            task_config=self.task_config,
+            action=action,
+            previous_delta_E_matrix=previous_delta_E_matrix,
+        )
         
     def step(self, action:CBAAction):
 
