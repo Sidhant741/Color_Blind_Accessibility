@@ -25,7 +25,7 @@ STDOUT FORMAT
 
     [START] task=<task_name> env=<benchmark> model=<model_name>
     [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-    [END]   task=<task_name> success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
+    [END]   success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
 
   Rules:
     - One [START] line at episode begin.
@@ -38,11 +38,11 @@ STDOUT FORMAT
     - Each tasks should return score in [0, 1]
 
   Example:
-    [START] task=task_easy env=colorblind_env model=Qwen3-VL-30B
+    [START] task=click-test env=miniwob model=Qwen3-VL-30B
     [STEP] step=1 action=click('123') reward=0.00 done=false error=null
     [STEP] step=2 action=fill('456','text') reward=0.00 done=false error=null
     [STEP] step=3 action=click('789') reward=1.00 done=true error=null
-    [END] task=task_easy success=true steps=3 score=1.00 rewards=0.00,0.00,1.00
+    [END] success=true steps=3 score=1.00 rewards=0.00,0.00,1.00
 """
 
 import asyncio
@@ -67,19 +67,22 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://api.groq.com/openai/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
-TASK_NAME = os.getenv("CBA_TASK", "task_easy")  # task_easy | task_medium | task_hard
+TASK_NAME = os.getenv("CBA_TASK", "easy")
 BENCHMARK = os.getenv("CBA_BENCHMARK", "colorblind_env")
 MAX_STEPS = 20
 TEMPERATURE = 0.7
 MAX_TOKENS = 500
-SUCCESS_SCORE_THRESHOLD = 0.1
+SUCCESS_SCORE_THRESHOLD = 0.1  # normalized score in [0, 1]
 
-# Map task_id → env task name
 TASK_ID_TO_ENV = {
-    "task_easy": "easy",
-    "task_medium": "medium",
-    "task_hard": "hard",
+    "easy": "task_easy",
+    "medium": "task_medium",
+    "hard": "task_hard",
 }
+
+# Max possible reward: each token contributes 0.1, across all steps
+# _MAX_REWARD_PER_STEP = MAX_TOKENS * 0.1
+# MAX_TOTAL_REWARD = MAX_STEPS * _MAX_REWARD_PER_STEP
 
 SYSTEM_PROMPT = """
 You are fixing a colorblind scatter plot.
@@ -111,7 +114,6 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
         f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
         flush=True,
     )
-
 
 def log_end(task: str, success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
@@ -167,6 +169,7 @@ async def main() -> None:
     
     env = CBAEnv(base_url="ws://localhost:7860")
     await env.connect()
+    #env = await MyEnvV4Env.from_docker_image(IMAGE_NAME)
 
     history: List[str] = []
     rewards: List[float] = []
@@ -174,13 +177,24 @@ async def main() -> None:
     score = 0.0
     success = False
 
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-
     try:
-        env_task = TASK_ID_TO_ENV.get(TASK_NAME, "easy")
-        result = await env.reset(task=env_task)
+        # result = await env.reset(task=TASK_NAME) # OpenENV.reset()
+        result = await env.reset(task=None)  # let env randomly pick easy/medium/hard
+        
+        cb_types = result.observation.colorblind_types
+        if len(cb_types) == 1:
+            TASK_NAME = "task_easy"
+        elif len(cb_types) == 2:
+            TASK_NAME = "task_medium"
+        else:
+            TASK_NAME = "task_hard"
+        
+        log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
+
+        # last_echoed = result.observation.echoed_message
         last_obs = result.observation
+
         last_reward = 0.0
 
         for step in range(1, MAX_STEPS + 1):
@@ -188,7 +202,11 @@ async def main() -> None:
                 break
 
             prompt = build_action_prompt(last_obs)
+            # raw = get_model_message(client, step, prompt, last_reward, history)
             raw = get_model_message(client, prompt)
+
+            # print(f"[DEBUG] prompt={prompt}", flush=True)
+            # print(f"[DEBUG] model_raw={raw}", flush=True)
 
             action_data = parse_action(raw)
 
@@ -222,13 +240,17 @@ async def main() -> None:
             last_reward = reward
 
             log_step(step=step, action=action_str, reward=reward, done=done, error=error)
+
+            # history.append(f"Step {step}: {message!r} -> reward {reward:+.2f}")
             history.append(f"Step {step}: {action_str!r} -> reward {reward:+.2f}")
 
             if done:
                 break
 
+        # Average of per-step rewards (already in (0.001, 0.999) from environment grader)
         score = sum(rewards) / len(rewards) if rewards else 0.5
         score = min(max(score, 0.001), 0.999)
+
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     finally:
