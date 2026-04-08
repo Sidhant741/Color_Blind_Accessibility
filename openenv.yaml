@@ -1,5 +1,6 @@
 spec_version: 1
 name: colorblind_env
+version: 0.5.0
 type: space
 runtime: fastapi
 app: server.app:app
@@ -20,7 +21,7 @@ tasks:
     difficulty: easy
     has_grader: true
     grader:
-      type: grader.EasyGrader
+      type: graders.EasyGrader
 
   - id: medium
     name: Handle overlapping colors
@@ -32,7 +33,7 @@ tasks:
     difficulty: medium
     has_grader: true
     grader:
-      type: grader.MediumGrader
+      type: graders.MediumGrader
 
   - id: hard
     name: Optimize full plot accessibility
@@ -44,7 +45,7 @@ tasks:
     difficulty: hard
     has_grader: true
     grader:
-      type: grader.HardGrader
+      type: graders.HardGrader
 
 metadata:
   domain: ai
