@@ -229,9 +229,7 @@ class CBAEnvironment(Environment):
         img_b64 = base64.b64encode(buffer.getvalue())
         return img_b64.decode('utf-8')
 
-
-
-    def reset(self, task: str = "easy", cb_types: list = None) -> CBAObservation:
+    def reset(self, task=None, cb_types: list = None) -> CBAObservation:
         """
         Reset the environment.
 
@@ -250,11 +248,14 @@ class CBAEnvironment(Environment):
         Returns:
             CBAObservation with initial game state
         """
-        if task is not None:
+        
+        if task is None:
+            self.task = random.choice(['easy', 'medium', 'hard'])
+        else:
             assert task in ['easy', 'medium', 'hard'], "task value must be from ['easy', 'medium', 'hard']"
             self.task = task
-            self.task_config = TASK_CONFIGS[self.task]
-
+        
+        self.task_config = TASK_CONFIGS[self.task]
         self.steps_taken = 0
         self.is_done = False
         self.is_solved = False
@@ -398,8 +399,10 @@ class CBAEnvironment(Environment):
 
         ### Final Score ###
         total_reward = core_reward + bonus + penalty
-        return max(0.0, min(1.0, total_reward))
+        reward = min(max(total_reward, 0.001), 0.999)
 
+        return reward
+        
     def step(self, action:CBAAction):
 
         if self.is_done :

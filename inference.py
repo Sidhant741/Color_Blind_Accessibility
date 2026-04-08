@@ -69,14 +69,14 @@ API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
 TASK_NAME = os.getenv("CBA_TASK", "easy")
 BENCHMARK = os.getenv("CBA_BENCHMARK", "colorblind_env")
-MAX_STEPS = 8
+MAX_STEPS = 20
 TEMPERATURE = 0.7
-MAX_TOKENS = 150
+MAX_TOKENS = 500
 SUCCESS_SCORE_THRESHOLD = 0.1  # normalized score in [0, 1]
 
 # Max possible reward: each token contributes 0.1, across all steps
-_MAX_REWARD_PER_STEP = MAX_TOKENS * 0.1
-MAX_TOTAL_REWARD = MAX_STEPS * _MAX_REWARD_PER_STEP
+# _MAX_REWARD_PER_STEP = MAX_TOKENS * 0.1
+# MAX_TOTAL_REWARD = MAX_STEPS * _MAX_REWARD_PER_STEP
 
 SYSTEM_PROMPT = """
 You are fixing a colorblind scatter plot.
@@ -175,7 +175,9 @@ async def main() -> None:
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        result = await env.reset(task=TASK_NAME) # OpenENV.reset()
+        # result = await env.reset(task=TASK_NAME) # OpenENV.reset()
+        result = await env.reset(task=None)  # let env randomly pick easy/medium/hard
+
         # last_echoed = result.observation.echoed_message
         last_obs = result.observation
 
@@ -231,8 +233,10 @@ async def main() -> None:
             if done:
                 break
 
-        score = sum(rewards) / MAX_TOTAL_REWARD if MAX_TOTAL_REWARD > 0 else 0.0
-        score = min(max(score, 0.0), 1.0)  # clamp to [0, 1]
+        # Average of per-step rewards (already in (0.001, 0.999) from environment grader)
+        score = sum(rewards) / len(rewards) if rewards else 0.5
+        score = min(max(score, 0.001), 0.999)
+
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     finally:
