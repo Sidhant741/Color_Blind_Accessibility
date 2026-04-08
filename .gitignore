@@ -4,3 +4,4 @@
 *.pyc
 openenv_colorblind_env.egg-info/*
 .venv/*
+local_validator.py

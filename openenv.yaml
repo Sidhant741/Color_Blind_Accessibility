@@ -4,3 +4,48 @@ type: space
 runtime: fastapi
 app: server.app:app
 port: 7860
+
+description: |
+  RL environment for improving scatter plot accessibility for colorblind users.
+  An agent learns to recolor and reshape scatter plot categories so they are
+  distinguishable under deuteranopia, protanopia, and tritanopia.
+
+tasks:
+  - id: easy
+    name: Fix color contrast
+    description: >
+      Fix a scatter plot with 2 color-confused categories for one colorblind type
+      (deuteranopia). Agent must recolor only. Grader checks CIEDE2000 delta-E
+      across the single CB simulation. Expected score: 0.85–0.95.
+    difficulty: easy
+    has_grader: true
+    grader:
+      type: grader.EasyGrader
+
+  - id: medium
+    name: Handle overlapping colors
+    description: >
+      Fix a scatter plot with 5 similar colors affecting two colorblind types.
+      Agent may recolor or change shapes; color is primary. Soft action budget —
+      exceeding it adds penalties but does not stop the episode. No efficiency bonus.
+      Expected score: 0.60–0.80.
+    difficulty: medium
+    has_grader: true
+    grader:
+      type: grader.MediumGrader
+
+  - id: hard
+    name: Optimize full plot accessibility
+    description: >
+      Fix a scatter plot with 10 similar colors across three colorblind types.
+      Agent must recolor and change shapes within a strict action budget. Efficiency
+      bonus awarded for solving quickly; regression and redundant-action penalties apply.
+      Expected score: 0.30–0.50.
+    difficulty: hard
+    has_grader: true
+    grader:
+      type: grader.HardGrader
+
+metadata:
+  domain: ai
+  tags: [rl, accessibility, visualization, colorblind, openenv]
