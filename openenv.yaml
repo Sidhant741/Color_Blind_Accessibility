@@ -21,7 +21,7 @@ tasks:
     difficulty: easy
     has_grader: true
     grader:
-      type: graders.EasyGrader
+      type: graders.easy:EasyGrader
 
   - id: medium
     name: Handle overlapping colors
@@ -33,7 +33,7 @@ tasks:
     difficulty: medium
     has_grader: true
     grader:
-      type: graders.MediumGrader
+      type: graders.medium:MediumGrader
 
   - id: hard
     name: Optimize full plot accessibility
@@ -45,7 +45,7 @@ tasks:
     difficulty: hard
     has_grader: true
     grader:
-      type: graders.HardGrader
+      type: graders.hard:HardGrader
 
 metadata:
   domain: ai
