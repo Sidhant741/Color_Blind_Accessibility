@@ -14,6 +14,7 @@ description: |
 tasks:
   - id: task_easy
     name: Fix color contrast
+    max_steps: 10
     description: >
       Fix a scatter plot with 2 color-confused categories for one colorblind type
       (deuteranopia). Agent must recolor only. Grader checks CIEDE2000 delta-E
@@ -25,6 +26,7 @@ tasks:
 
   - id: task_medium
     name: Handle overlapping colors
+    max_steps: 20
     description: >
       Fix a scatter plot with 5 similar colors affecting two colorblind types.
       Agent may recolor or change shapes; color is primary. Soft action budget —
@@ -37,6 +39,7 @@ tasks:
 
   - id: task_hard
     name: Optimize full plot accessibility
+    max_steps: 30
     description: >
       Fix a scatter plot with 10 similar colors across three colorblind types.
       Agent must recolor and change shapes within a strict action budget. Efficiency
