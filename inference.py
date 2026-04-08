@@ -25,7 +25,7 @@ STDOUT FORMAT
 
     [START] task=<task_name> env=<benchmark> model=<model_name>
     [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-    [END]   success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
+    [END]   task=<task_name> success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
 
   Rules:
     - One [START] line at episode begin.
@@ -38,11 +38,9 @@ STDOUT FORMAT
     - Each tasks should return score in [0, 1]
 
   Example:
-    [START] task=click-test env=miniwob model=Qwen3-VL-30B
-    [STEP] step=1 action=click('123') reward=0.00 done=false error=null
-    [STEP] step=2 action=fill('456','text') reward=0.00 done=false error=null
-    [STEP] step=3 action=click('789') reward=1.00 done=true error=null
-    [END] success=true steps=3 score=1.00 rewards=0.00,0.00,1.00
+    [START] task=task_easy env=colorblind_env model=Qwen3-VL-30B
+    [STEP] step=1 action=recolor('Class A','#0077BB') reward=0.00 done=false error=null
+    [END] task=task_easy success=true steps=3 score=0.85 rewards=0.00,0.00,0.85
 """
 
 import asyncio
@@ -53,30 +51,27 @@ from typing import List, Optional
 from openai import OpenAI
 import json
 
-
-
-# from my_env_v4 import MyEnvV4Action, MyEnvV4Env
-# from OpenEnv.envs.colorblind_env.client import CBAEnv
 from client import CBAEnv
 from models import CBAAction, FixType, Shape
-# from OpenEnv.envs.colorblind_env.models import CBAAction, FixType, Shape
 
-IMAGE_NAME = os.getenv("colorblind-env") # If you are using docker image 
+IMAGE_NAME = os.getenv("colorblind-env")
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.groq.com/openai/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
-TASK_NAME = os.getenv("CBA_TASK", "easy")
 BENCHMARK = os.getenv("CBA_BENCHMARK", "colorblind_env")
 MAX_STEPS = 20
 TEMPERATURE = 0.7
 MAX_TOKENS = 500
-SUCCESS_SCORE_THRESHOLD = 0.1  # normalized score in [0, 1]
+SUCCESS_SCORE_THRESHOLD = 0.1
 
-# Max possible reward: each token contributes 0.1, across all steps
-# _MAX_REWARD_PER_STEP = MAX_TOKENS * 0.1
-# MAX_TOTAL_REWARD = MAX_STEPS * _MAX_REWARD_PER_STEP
+# task id → env task name
+TASKS = {
+    "task_easy": "easy",
+    "task_medium": "medium",
+    "task_hard": "hard",
+}
 
 SYSTEM_PROMPT = """
 You are fixing a colorblind scatter plot.
@@ -91,11 +86,13 @@ Rules:
 - If reshape: provide change_shape (one of: o, ^, *, x, +, p, s), leave change_hex null
 """.strip()
 
+
 def parse_action(text: str) -> dict:
     try:
         return json.loads(text)
     except Exception:
         return {}
+
 
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
@@ -110,23 +107,10 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
     )
 
 
-def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+def log_end(task: str, success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+    print(f"[END] task={task} success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
-
-def build_user_prompt(step: int, last_echoed: str, last_reward: float, history: List[str]) -> str:
-    history_block = "\n".join(history[-4:]) if history else "None"
-    return textwrap.dedent(
-        f"""
-        Step: {step}
-        Last echoed message: {last_echoed!r}
-        Last reward: {last_reward:.2f}
-        Previous steps:
-        {history_block}
-        Send your next message.
-        """
-    ).strip()
 
 def build_action_prompt(obs) -> str:
     cats = list(obs.hex_code_per_category.keys())
@@ -138,6 +122,7 @@ def build_action_prompt(obs) -> str:
         f"Pick ONE category to fix. Reply ONLY with valid JSON, no explanation:\n"
         f'Example: {{"target": "{cats[0]}", "fix_type": "recolor", "change_hex": "#0077BB"}}'
     )
+
 
 def get_model_message(client: OpenAI, prompt: str) -> str:
     try:
@@ -152,35 +137,25 @@ def get_model_message(client: OpenAI, prompt: str) -> str:
             stream=False,
         )
         text = (completion.choices[0].message.content or "").strip()
-        # print(f"[DEBUG] raw model response: {repr(text)}", flush=True)
         return text if text else "hello"
     except Exception as exc:
         print(f"[DEBUG] Model request FAILED: {exc}", flush=True)
         return "hello"
 
 
-async def main() -> None:
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    
-    env = CBAEnv(base_url="ws://localhost:7860")
-    await env.connect()
-    #env = await MyEnvV4Env.from_docker_image(IMAGE_NAME)
-
+async def run_task(client: OpenAI, env: CBAEnv, task_id: str, env_task: str) -> None:
+    """Run a single task episode and emit START / STEP / END lines."""
     history: List[str] = []
     rewards: List[float] = []
     steps_taken = 0
     score = 0.0
     success = False
 
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        # result = await env.reset(task=TASK_NAME) # OpenENV.reset()
-        result = await env.reset(task=None)  # let env randomly pick easy/medium/hard
-
-        # last_echoed = result.observation.echoed_message
+        result = await env.reset(task=env_task)
         last_obs = result.observation
-
         last_reward = 0.0
 
         for step in range(1, MAX_STEPS + 1):
@@ -188,11 +163,7 @@ async def main() -> None:
                 break
 
             prompt = build_action_prompt(last_obs)
-            # raw = get_model_message(client, step, prompt, last_reward, history)
             raw = get_model_message(client, prompt)
-
-            # print(f"[DEBUG] prompt={prompt}", flush=True)
-            # print(f"[DEBUG] model_raw={raw}", flush=True)
 
             action_data = parse_action(raw)
 
@@ -212,39 +183,42 @@ async def main() -> None:
                     action_str = f"reshape {target} {action_data['change_shape']}"
 
             result = await env.step(action)
-
             obs = result.observation
-
             reward = result.reward or 0.0
             done = result.done
-            error = None
 
             rewards.append(reward)
             steps_taken = step
             last_obs = obs
-
             last_reward = reward
 
-            log_step(step=step, action=action_str, reward=reward, done=done, error=error)
-
-            # history.append(f"Step {step}: {message!r} -> reward {reward:+.2f}")
+            log_step(step=step, action=action_str, reward=reward, done=done, error=None)
             history.append(f"Step {step}: {action_str!r} -> reward {reward:+.2f}")
 
             if done:
                 break
 
-        # Average of per-step rewards (already in (0.001, 0.999) from environment grader)
         score = sum(rewards) / len(rewards) if rewards else 0.5
         score = min(max(score, 0.001), 0.999)
-
         success = score >= SUCCESS_SCORE_THRESHOLD
 
+    finally:
+        log_end(task=task_id, success=success, steps=steps_taken, score=score, rewards=rewards)
+
+
+async def main() -> None:
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    env = CBAEnv(base_url="ws://localhost:7860")
+    await env.connect()
+
+    try:
+        for task_id, env_task in TASKS.items():
+            await run_task(client, env, task_id, env_task)
     finally:
         try:
             await env.close()
         except Exception as e:
-            print(f"[DEBUG] env.close() error (container cleanup): {e}", flush=True)
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+            print(f"[DEBUG] env.close() error: {e}", flush=True)
 
 
 if __name__ == "__main__":
